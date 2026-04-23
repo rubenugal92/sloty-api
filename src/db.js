@@ -99,16 +99,20 @@ const updateAppointment = async (id, updates) => {
   let i = 1
 
   for (const [k, v] of Object.entries(updates)) {
-    fields.push(`${k} = $${i++}`)
+    fields.push(`${k} = $${i}`)
     values.push(v)
+    i++
   }
 
+  fields.push(`updated_at = $${i}`)
   values.push(new Date())
+  i++
+
   values.push(id)
 
   const result = await pool.query(
-    `UPDATE appointments SET ${fields.join(', ')}, updated_at = $${i}
-     WHERE id = $${i + 1}
+    `UPDATE appointments SET ${fields.join(', ')}
+     WHERE id = $${i}
      RETURNING *`,
     values
   )
