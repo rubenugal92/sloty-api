@@ -208,7 +208,8 @@ const handleMessage = async (from, text) => {
 
 if (normalizedSlots.includes(time.trim().slice(0,5)))
 
-        const datetime = `${date}T${time}:00`;
+        const cleanTime = time.trim().slice(0,5);
+const datetime = `${date}T${cleanTime}:00`;
         await bookAppointment(from, datetime);
 
         await sendMessage(
