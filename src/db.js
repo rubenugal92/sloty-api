@@ -19,7 +19,10 @@ const pool = new Pool({
       datetime TIMESTAMP NOT NULL,
       duration INTEGER DEFAULT 60,
       service TEXT DEFAULT 'physio',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      status TEXT DEFAULT 'confirmed',
+      notes TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
     console.log('Database schema initialized');
   } catch (err) {
@@ -69,14 +72,107 @@ const bookAppointment = async (phone, datetime, service = 'physio') => {
 
     // Insert new appointment
     const insertResult = await pool.query(
-      `INSERT INTO appointments (phone, datetime, service) VALUES ($1, $2, $3) RETURNING id`,
+      `INSERT INTO appointments (phone, datetime, service) VALUES ($1, $2, $3) RETURNING *`,
       [phone, datetime, service]
     );
 
-    return insertResult.rows[0].id;
+    return insertResult.rows[0];
   } catch (err) {
     throw err;
   }
 };
 
-module.exports = { getAvailableSlots, bookAppointment, pool };
+// Get all appointments
+const getAllAppointments = async () => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM appointments ORDER BY datetime ASC`
+    );
+    return result.rows;
+  } catch (err) {
+    console.error('DB error:', err);
+    throw err;
+  }
+};
+
+// Get appointments by date range
+const getAppointmentsByDateRange = async (startDate, endDate) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM appointments WHERE datetime >= $1 AND datetime <= $2 ORDER BY datetime ASC`,
+      [startDate, endDate]
+    );
+    return result.rows;
+  } catch (err) {
+    console.error('DB error:', err);
+    throw err;
+  }
+};
+
+// Get appointment by ID
+const getAppointmentById = async (id) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM appointments WHERE id = $1`,
+      [id]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    console.error('DB error:', err);
+    throw err;
+  }
+};
+
+// Update appointment
+const updateAppointment = async (id, updates) => {
+  try {
+    const fields = [];
+    const values = [];
+    let paramCount = 1;
+
+    for (const [key, value] of Object.entries(updates)) {
+      fields.push(`${key} = $${paramCount}`);
+      values.push(value);
+      paramCount++;
+    }
+
+    fields.push(`updated_at = $${paramCount}`);
+    values.push(new Date());
+    values.push(id);
+
+    const result = await pool.query(
+      `UPDATE appointments SET ${fields.join(', ')} WHERE id = $${paramCount + 1} RETURNING *`,
+      values
+    );
+
+    return result.rows[0] || null;
+  } catch (err) {
+    console.error('DB error:', err);
+    throw err;
+  }
+};
+
+// Delete appointment
+const deleteAppointment = async (id) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM appointments WHERE id = $1 RETURNING *`,
+      [id]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    console.error('DB error:', err);
+    throw err;
+  }
+};
+
+module.exports = { 
+  getAvailableSlots, 
+  bookAppointment,
+  getAllAppointments,
+  getAppointmentsByDateRange,
+  getAppointmentById,
+  updateAppointment,
+  deleteAppointment,
+  pool 
+};
