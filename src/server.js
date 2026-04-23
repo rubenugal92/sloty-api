@@ -69,24 +69,41 @@ const getNextWeekday = (weekday) => {
 
 // ===================== WEBHOOK =====================
 
+// Verificación del webhook (META lo requiere)
+app.get('/webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  const verifyToken = process.env.VERIFY_TOKEN;
+
+  if (mode === 'subscribe' && token === verifyToken) {
+    console.log('✅ Webhook verificado correctamente');
+    res.status(200).send(challenge);
+  } else {
+    console.error('❌ Token de verificación inválido');
+    res.sendStatus(403);
+  }
+});
+
 app.post('/webhook', async (req, res) => {
   try {
     const body = req.body;
 
     if (body.object === 'whatsapp_business_account') {
-      body.entry?.forEach(entry => {
-        entry.changes?.forEach(change => {
+      for (const entry of body.entry || []) {
+        for (const change of entry.changes || []) {
           if (change.field === 'messages') {
-            change.value.messages?.forEach(async (message) => {
+            for (const message of change.value.messages || []) {
               if (message.type === 'text') {
                 const from = message.from;
                 const text = message.text.body.toLowerCase().trim();
                 await handleMessage(from, text);
               }
-            });
+            }
           }
-        });
-      });
+        }
+      }
     }
 
     res.sendStatus(200);
@@ -193,8 +210,102 @@ const handleMessage = async (from, text) => {
 // ===================== API =====================
 
 app.get('/api/appointments', async (_, res) => {
-  res.json(await getAllAppointments());
+  try {
+    const appointments = await getAllAppointments();
+    res.json(appointments);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error fetching appointments' });
+  }
 });
+
+app.get('/api/appointments/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const appointment = await getAppointmentById(id);
+    if (!appointment) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+    res.json(appointment);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error fetching appointment' });
+  }
+});
+
+app.post('/api/appointments', async (req, res) => {
+  try {
+    const { phone, datetime, service, status, notes, duration } = req.body;
+
+    if (!phone || !datetime) {
+      return res.status(400).json({ error: 'phone and datetime are required' });
+    }
+
+    const appointment = await bookAppointment(phone, datetime, service);
+    res.status(201).json(appointment);
+  } catch (err) {
+    console.error(err);
+    if (err.message.includes('Slot ocupado')) {
+      return res.status(409).json({ error: 'Slot already booked' });
+    }
+    res.status(500).json({ error: 'Error creating appointment' });
+  }
+});
+
+app.put('/api/appointments/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No updates provided' });
+    }
+
+    const appointment = await updateAppointment(id, updates);
+    if (!appointment) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+    res.json(appointment);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error updating appointment' });
+  }
+});
+
+app.delete('/api/appointments/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const appointment = await deleteAppointment(id);
+    if (!appointment) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+    res.json({ message: 'Appointment deleted', appointment });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error deleting appointment' });
+  }
+});
+
+app.get('/api/slots/:date', async (req, res) => {
+  try {
+    const { date } = req.params
+
+    if (!date || date === 'undefined') {
+      return res.status(400).json({ error: 'Invalid date' })
+    }
+
+    const slots = await getAvailableSlots(date)
+
+    res.json({
+      date,
+      slots
+    })
+
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error fetching slots' })
+  }
+})
 
 // ===================== START =====================
 
