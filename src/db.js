@@ -6,7 +6,7 @@ const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 5432,
   database: process.env.DB_NAME || 'fisiocom_db',
-})
+});
 
 // ===================== INIT =====================
 (async () => {
@@ -25,10 +25,12 @@ const pool = new Pool({
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `)
+  } catch (err) {
+    console.error('Table creation failed:', err)
   } finally {
     client.release()
   }
-})()
+})();
 
 // ===================== SLOTS =====================
 const getAvailableSlots = async (date) => {
