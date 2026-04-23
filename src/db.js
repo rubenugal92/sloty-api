@@ -39,11 +39,14 @@ const getAvailableSlots = async (date) => {
 
   const slots = []
 
-  const startWork = new Date(`${date}T09:00:00`)
-  const endWork = new Date(`${date}T20:00:00`)
+  // 🔥 FIX: Horarios de trabajo en UTC (09:00-20:00 España = 07:00-18:00 UTC)
+  const startWork = new Date(`${date}T07:00:00`)
+  const endWork = new Date(`${date}T18:00:00`)
 
   for (let t = new Date(startWork); t < endWork; t.setMinutes(t.getMinutes() + 60)) {
-    slots.push(t.toTimeString().slice(0, 5))
+    // Mostrar en zona horaria local España (UTC+2)
+    const localTime = new Date(t.getTime() + 2 * 60 * 60 * 1000)
+    slots.push(localTime.toTimeString().slice(0, 5))
   }
 
   const result = await pool.query(
@@ -51,9 +54,12 @@ const getAvailableSlots = async (date) => {
     [start, end]
   )
 
-  const booked = result.rows.map(r =>
-    new Date(r.datetime).toTimeString().slice(0, 5)
-  )
+  const booked = result.rows.map(r => {
+    // Convertir UTC a zona horaria local España
+    const utcTime = new Date(r.datetime)
+    const localTime = new Date(utcTime.getTime() + 2 * 60 * 60 * 1000)
+    return localTime.toTimeString().slice(0, 5)
+  })
 
   return slots.filter(s => !booked.includes(s))
 }
