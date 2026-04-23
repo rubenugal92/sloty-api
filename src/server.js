@@ -47,12 +47,19 @@ const dayMap = {
 
 const getNextWeekday = (weekday) => {
   const today = new Date();
-  const result = new Date();
 
-  const diff = (weekday + 7 - today.getDay()) % 7;
+  // normalizar a medianoche local (IMPORTANTE)
+  today.setHours(0, 0, 0, 0);
+
+  const result = new Date(today);
+
+  const diff = (weekday - today.getDay() + 7) % 7;
+
+  // si es hoy, saltamos a la próxima semana
   result.setDate(today.getDate() + (diff === 0 ? 7 : diff));
 
-  return result.toISOString().split('T')[0];
+  return result.toLocaleDateString('en-CA'); 
+  // YYYY-MM-DD en LOCAL (NO UTC)
 };
 
 // ===================== WHATSAPP WEBHOOK =====================
@@ -197,7 +204,9 @@ const handleMessage = async (from, text) => {
 
       const available = await getAvailableSlots(date);
 
-      if (available.includes(time)) {
+      const normalizedSlots = available.map(s => s.trim().slice(0,5));
+
+if (normalizedSlots.includes(time.trim().slice(0,5)))
 
         const datetime = `${date}T${time}:00`;
         await bookAppointment(from, datetime);
