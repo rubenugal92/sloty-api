@@ -1,15 +1,15 @@
 const express = require('express');
-const { 
-  getAvailableSlots, 
+const {
+  getAvailableSlots,
   bookAppointment,
   getAllAppointments,
   getAppointmentsByDateRange,
   getAppointmentById,
   updateAppointment,
-  deleteAppointment 
+  deleteAppointment
 } = require('./db');
 
-const { sendMessage, sendTemplateMessage } = require('./whatsapp');
+const { sendMessage } = require('./whatsapp');
 
 const app = express();
 
@@ -21,7 +21,6 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
@@ -31,7 +30,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// ===================== DÍAS DE LA SEMANA =====================
+// ===================== DÍAS SEMANA =====================
 
 const dayMap = {
   domingo: 0,
@@ -47,22 +46,47 @@ const dayMap = {
 
 const getNextWeekday = (weekday) => {
   const today = new Date();
-
-  // normalizar a medianoche local (IMPORTANTE)
   today.setHours(0, 0, 0, 0);
 
   const result = new Date(today);
 
   const diff = (weekday - today.getDay() + 7) % 7;
 
-  // si es hoy, saltamos a la próxima semana
   result.setDate(today.getDate() + (diff === 0 ? 7 : diff));
 
-  return result.toLocaleDateString('en-CA'); 
-  // YYYY-MM-DD en LOCAL (NO UTC)
+  const year = result.getFullYear();
+  const month = String(result.getMonth() + 1).padStart(2, '0');
+  const day = String(result.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
 };
 
-// ===================== WHATSAPP WEBHOOK =====================
+// ===================== HELPERS =====================
+
+const normalizeTime = (t) => t.trim().slice(0, 5);
+
+const getNextAvailableDates = async () => {
+  const alternatives = [];
+  let date = new Date();
+
+  while (alternatives.length < 3) {
+    const dateStr = date.toISOString().split('T')[0];
+    const slots = await getAvailableSlots(dateStr);
+
+    if (slots.length > 0) {
+      alternatives.push({
+        date: dateStr,
+        slots: slots.slice(0, 3)
+      });
+    }
+
+    date.setDate(date.getDate() + 1);
+  }
+
+  return alternatives;
+};
+
+// ===================== WEBHOOK =====================
 
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
@@ -70,7 +94,6 @@ app.get('/webhook', (req, res) => {
   const challenge = req.query['hub.challenge'];
 
   if (mode === 'subscribe' && token === process.env.VERIFY_TOKEN) {
-    console.log('Webhook verified');
     return res.status(200).send(challenge);
   }
 
@@ -99,40 +122,17 @@ app.post('/webhook', async (req, res) => {
 
     res.sendStatus(200);
   } catch (error) {
-    console.error('Webhook error:', error);
+    console.error(error);
     res.sendStatus(200);
   }
 });
-
-// ===================== HELPERS =====================
-
-const getNextAvailableDates = async () => {
-  const alternatives = [];
-  let date = new Date();
-
-  while (alternatives.length < 3) {
-    const dateStr = date.toISOString().split('T')[0];
-    const slots = await getAvailableSlots(dateStr);
-
-    if (slots.length > 0) {
-      alternatives.push({
-        date: dateStr,
-        slots: slots.slice(0, 3)
-      });
-    }
-
-    date.setDate(date.getDate() + 1);
-  }
-
-  return alternatives;
-};
 
 // ===================== LOGICA PRINCIPAL =====================
 
 const handleMessage = async (from, text) => {
   try {
 
-    // ===================== 1. DÍAS NATURALES =====================
+    // ---------- DÍAS NATURALES ----------
     for (const [dayName, dayIndex] of Object.entries(dayMap)) {
       if (text.includes(dayName)) {
 
@@ -149,35 +149,28 @@ const handleMessage = async (from, text) => {
         if (slots.length > 0) {
           await sendMessage(
             from,
-            `📅 ${readable}\n\nHorarios disponibles:\n${slots.join(', ')}\n\nResponde con la hora (ej: 10:00)`
+            `📅 ${readable}\n\nHorarios:\n${slots.join(', ')}`
           );
         } else {
-          await sendMessage(
-            from,
-            `❌ No hay disponibilidad para ${readable}`
-          );
+          await sendMessage(from, `❌ No hay disponibilidad para ${readable}`);
         }
 
         return;
       }
     }
 
-    // ===================== 2. COMANDO GENERAL =====================
-    if (text.includes('cita') || text.includes('booking') || text.includes('disponible')) {
+    // ---------- COMANDO GENERAL ----------
+    if (text.includes('cita') || text.includes('disponible')) {
 
       const today = new Date().toISOString().split('T')[0];
       const slots = await getAvailableSlots(today);
 
       if (slots.length > 0) {
-        await sendMessage(
-          from,
-          `✅ Disponibilidad hoy:\n${slots.join(', ')}\n\nResponde con la hora (ej: 10:00)`
-        );
+        await sendMessage(from, `✅ Hoy:\n${slots.join(', ')}`);
       } else {
-
         const alternatives = await getNextAvailableDates();
 
-        let msg = `❌ Hoy no hay disponibilidad\n\n📅 Próximos días:\n\n`;
+        let msg = `❌ Hoy no hay disponibilidad\n\n`;
 
         alternatives.forEach((alt, i) => {
           const d = new Date(alt.date).toLocaleDateString('es-ES', {
@@ -186,35 +179,30 @@ const handleMessage = async (from, text) => {
             month: 'long'
           });
 
-          msg += `${i + 1}. ${d}\n   ${alt.slots.join(', ')}\n`;
+          msg += `${i + 1}. ${d}: ${alt.slots.join(', ')}\n`;
         });
 
-        msg += `\nResponde: "1 10:00"`;
         await sendMessage(from, msg);
       }
 
       return;
     }
 
-    // ===================== 3. HORA HOY =====================
+    // ---------- HORA HOY ----------
     if (/^\d{1,2}:\d{2}$/.test(text)) {
 
-      const time = text;
+      const time = normalizeTime(text);
       const date = new Date().toISOString().split('T')[0];
 
       const available = await getAvailableSlots(date);
+      const normalized = available.map(normalizeTime);
 
-      const normalizedSlots = available.map(s => s.trim().slice(0,5));
-
-      if (normalizedSlots.includes(time.trim().slice(0,5))){
+      if (normalized.includes(time)) {
 
         const datetime = `${date}T${time}:00`;
         await bookAppointment(from, datetime);
 
-        await sendMessage(
-          from,
-          `✅ Cita confirmada hoy a las ${time}`
-        );
+        await sendMessage(from, `✅ Cita confirmada hoy a las ${time}`);
 
       } else {
         await sendMessage(from, `❌ Hora no disponible`);
@@ -223,7 +211,7 @@ const handleMessage = async (from, text) => {
       return;
     }
 
-    // ===================== 4. OPCIÓN ALTERNATIVA =====================
+    // ---------- ALTERNATIVAS ----------
     if (/^\d\s\d{1,2}:\d{2}$/.test(text)) {
 
       const [opt, time] = text.split(' ');
@@ -233,8 +221,9 @@ const handleMessage = async (from, text) => {
 
       if (selected?.slots.includes(time)) {
 
-        const cleanTime = time.trim().slice(0,5);
-        const datetime = `${date}T${cleanTime}:00`;
+        const cleanTime = normalizeTime(time);
+        const datetime = `${selected.date}T${cleanTime}:00`;
+
         await bookAppointment(from, datetime);
 
         await sendMessage(from, `✅ Cita confirmada`);
@@ -246,83 +235,30 @@ const handleMessage = async (from, text) => {
       return;
     }
 
-    // ===================== 5. DEFAULT =====================
+    // ---------- DEFAULT ----------
     await sendMessage(
       from,
-      `👋 Hola! Escribe "cita" o dime un día (ej: jueves)`
+      `👋 Escribe "cita" o un día (ej: jueves)`
     );
 
   } catch (error) {
-    console.error('Handle message error:', error);
+    console.error(error);
     await sendMessage(from, '❌ Error procesando mensaje');
   }
 };
 
-// ===================== API REST =====================
+// ===================== API =====================
 
-app.get('/api/appointments', async (req, res) => {
-  try {
-    const data = await getAllAppointments();
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ error: 'error' });
-  }
+app.get('/api/appointments', async (_, res) => {
+  res.json(await getAllAppointments());
 });
 
-app.get('/api/slots/:date', async (req, res) => {
-  try {
-    const slots = await getAvailableSlots(req.params.date);
-    res.json(slots);
-  } catch (error) {
-    res.status(500).json({ error: 'error' });
-  }
-});
-
-app.get('/api/appointments/:id', async (req, res) => {
-  try {
-    const data = await getAppointmentById(req.params.id);
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ error: 'error' });
-  }
-});
-
-app.post('/api/appointments', async (req, res) => {
-  try {
-    const { phone, datetime, service } = req.body;
-    const result = await bookAppointment(phone, datetime, service);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ error: 'error' });
-  }
-});
-
-app.put('/api/appointments/:id', async (req, res) => {
-  try {
-    const result = await updateAppointment(req.params.id, req.body);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ error: 'error' });
-  }
-});
-
-app.delete('/api/appointments/:id', async (req, res) => {
-  try {
-    const result = await deleteAppointment(req.params.id);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ error: 'error' });
-  }
-});
-
-// ===================== START SERVER =====================
+// ===================== START =====================
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📱 Webhook: /webhook`);
-  console.log(`📡 API ready`);
+  console.log(`🚀 Running on ${PORT}`);
 });
 
 module.exports = app;
