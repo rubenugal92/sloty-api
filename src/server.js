@@ -13,9 +13,12 @@ const { sendMessage } = require('./whatsapp');
 
 const app = express();
 
-// ===================== MIDDLEWARE =====================
-
 app.use(express.json());
+
+// ===================== STATE (IMPORTANTE) =====================
+const userContext = new Map();
+
+// ===================== CORS + LOG =====================
 
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -30,7 +33,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// ===================== DÍAS SEMANA =====================
+// ===================== DÍAS =====================
 
 const dayMap = {
   domingo: 0,
@@ -44,12 +47,15 @@ const dayMap = {
   sabado: 6
 };
 
+// ===================== FECHAS (FIX REAL) =====================
+
+const normalizeTime = (t) => t.trim().slice(0, 5);
+
 const getNextWeekday = (weekday) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   const result = new Date(today);
-
   const diff = (weekday - today.getDay() + 7) % 7;
 
   result.setDate(today.getDate() + (diff === 0 ? 7 : diff));
@@ -61,44 +67,7 @@ const getNextWeekday = (weekday) => {
   return `${year}-${month}-${day}`;
 };
 
-// ===================== HELPERS =====================
-
-const normalizeTime = (t) => t.trim().slice(0, 5);
-
-const getNextAvailableDates = async () => {
-  const alternatives = [];
-  let date = new Date();
-
-  while (alternatives.length < 3) {
-    const dateStr = date.toISOString().split('T')[0];
-    const slots = await getAvailableSlots(dateStr);
-
-    if (slots.length > 0) {
-      alternatives.push({
-        date: dateStr,
-        slots: slots.slice(0, 3)
-      });
-    }
-
-    date.setDate(date.getDate() + 1);
-  }
-
-  return alternatives;
-};
-
 // ===================== WEBHOOK =====================
-
-app.get('/webhook', (req, res) => {
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
-
-  if (mode === 'subscribe' && token === process.env.VERIFY_TOKEN) {
-    return res.status(200).send(challenge);
-  }
-
-  res.sendStatus(403);
-});
 
 app.post('/webhook', async (req, res) => {
   try {
@@ -121,39 +90,37 @@ app.post('/webhook', async (req, res) => {
     }
 
     res.sendStatus(200);
-  } catch (error) {
-    console.error(error);
+  } catch (err) {
+    console.error(err);
     res.sendStatus(200);
   }
 });
 
-// ===================== LOGICA PRINCIPAL =====================
+// ===================== LOGICA =====================
 
 const handleMessage = async (from, text) => {
   try {
 
-    // ---------- DÍAS NATURALES ----------
+    // ---------- DETECTAR DÍA ----------
     for (const [dayName, dayIndex] of Object.entries(dayMap)) {
       if (text.includes(dayName)) {
 
         const targetDate = getNextWeekday(dayIndex);
+
+        userContext.set(from, { date: targetDate });
+
         const slots = await getAvailableSlots(targetDate);
 
-        const dateObj = new Date(targetDate);
-        const readable = dateObj.toLocaleDateString('es-ES', {
+        const readable = new Date(targetDate + "T00:00:00").toLocaleDateString('es-ES', {
           weekday: 'long',
           day: 'numeric',
           month: 'long'
         });
 
-        if (slots.length > 0) {
-          await sendMessage(
-            from,
-            `📅 ${readable}\n\nHorarios:\n${slots.join(', ')}`
-          );
-        } else {
-          await sendMessage(from, `❌ No hay disponibilidad para ${readable}`);
-        }
+        await sendMessage(
+          from,
+          `📅 ${readable}\n\nHorarios:\n${slots.join(', ')}\n\nResponde con la hora (ej: 10:00)`
+        );
 
         return;
       }
@@ -165,34 +132,28 @@ const handleMessage = async (from, text) => {
       const today = new Date().toISOString().split('T')[0];
       const slots = await getAvailableSlots(today);
 
-      if (slots.length > 0) {
-        await sendMessage(from, `✅ Hoy:\n${slots.join(', ')}`);
-      } else {
-        const alternatives = await getNextAvailableDates();
-
-        let msg = `❌ Hoy no hay disponibilidad\n\n`;
-
-        alternatives.forEach((alt, i) => {
-          const d = new Date(alt.date).toLocaleDateString('es-ES', {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'long'
-          });
-
-          msg += `${i + 1}. ${d}: ${alt.slots.join(', ')}\n`;
-        });
-
-        await sendMessage(from, msg);
-      }
+      await sendMessage(
+        from,
+        slots.length > 0
+          ? `✅ Hoy:\n${slots.join(', ')}`
+          : `❌ Hoy no hay disponibilidad`
+      );
 
       return;
     }
 
-    // ---------- HORA HOY ----------
+    // ---------- HORA CON CONTEXTO ----------
     if (/^\d{1,2}:\d{2}$/.test(text)) {
 
       const time = normalizeTime(text);
-      const date = new Date().toISOString().split('T')[0];
+      const context = userContext.get(from);
+
+      if (!context?.date) {
+        await sendMessage(from, "❌ Primero dime un día (ej: lunes)");
+        return;
+      }
+
+      const date = context.date;
 
       const available = await getAvailableSlots(date);
       const normalized = available.map(normalizeTime);
@@ -200,9 +161,15 @@ const handleMessage = async (from, text) => {
       if (normalized.includes(time)) {
 
         const datetime = `${date}T${time}:00`;
+
         await bookAppointment(from, datetime);
 
-        await sendMessage(from, `✅ Cita confirmada hoy a las ${time}`);
+        await sendMessage(
+          from,
+          `✅ Cita confirmada para ${date} a las ${time}`
+        );
+
+        userContext.delete(from);
 
       } else {
         await sendMessage(from, `❌ Hora no disponible`);
@@ -211,39 +178,15 @@ const handleMessage = async (from, text) => {
       return;
     }
 
-    // ---------- ALTERNATIVAS ----------
-    if (/^\d\s\d{1,2}:\d{2}$/.test(text)) {
-
-      const [opt, time] = text.split(' ');
-      const alternatives = await getNextAvailableDates();
-
-      const selected = alternatives[parseInt(opt) - 1];
-
-      if (selected?.slots.includes(time)) {
-
-        const cleanTime = normalizeTime(time);
-        const datetime = `${selected.date}T${cleanTime}:00`;
-
-        await bookAppointment(from, datetime);
-
-        await sendMessage(from, `✅ Cita confirmada`);
-
-      } else {
-        await sendMessage(from, `❌ No disponible`);
-      }
-
-      return;
-    }
-
     // ---------- DEFAULT ----------
     await sendMessage(
       from,
-      `👋 Escribe "cita" o un día (ej: jueves)`
+      `👋 Escribe un día (ej: lunes) o "cita"`
     );
 
-  } catch (error) {
-    console.error(error);
-    await sendMessage(from, '❌ Error procesando mensaje');
+  } catch (err) {
+    console.error(err);
+    await sendMessage(from, "❌ Error");
   }
 };
 
@@ -258,7 +201,7 @@ app.get('/api/appointments', async (_, res) => {
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Running on ${PORT}`);
+  console.log(`🚀 Server running on ${PORT}`);
 });
 
 module.exports = app;
