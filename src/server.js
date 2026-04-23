@@ -206,10 +206,9 @@ const handleMessage = async (from, text) => {
 
       const normalizedSlots = available.map(s => s.trim().slice(0,5));
 
-if (normalizedSlots.includes(time.trim().slice(0,5)))
+      if (normalizedSlots.includes(time.trim().slice(0,5))){
 
-        const cleanTime = time.trim().slice(0,5);
-const datetime = `${date}T${cleanTime}:00`;
+        const datetime = `${date}T${time}:00`;
         await bookAppointment(from, datetime);
 
         await sendMessage(
@@ -234,7 +233,8 @@ const datetime = `${date}T${cleanTime}:00`;
 
       if (selected?.slots.includes(time)) {
 
-        const datetime = `${selected.date}T${time}:00`;
+        const cleanTime = time.trim().slice(0,5);
+        const datetime = `${date}T${cleanTime}:00`;
         await bookAppointment(from, datetime);
 
         await sendMessage(from, `✅ Cita confirmada`);
