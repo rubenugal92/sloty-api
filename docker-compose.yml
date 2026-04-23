@@ -5,9 +5,9 @@ services:
     image: postgres:15-alpine
     container_name: fisiocom_postgres
     environment:
-      POSTGRES_USER: fisiocom
-      POSTGRES_PASSWORD: password123
-      POSTGRES_DB: fisiocom_db
+      POSTGRES_USER: fisiouser1
+      POSTGRES_PASSWORD: iZn0vb8KkG6KUGYloUoWfuo02bjevHO0
+      POSTGRES_DB: fisiocom
     ports:
       - "5432:5432"
     volumes:
