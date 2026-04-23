@@ -3,6 +3,7 @@ const {
   getAvailableSlots,
   bookAppointment,
   getAllAppointments,
+  getAppointmentsByDateRange,
   getAppointmentById,
   updateAppointment,
   deleteAppointment
@@ -14,7 +15,11 @@ const app = express();
 
 app.use(express.json());
 
-// ===================== CORS =====================
+// ===================== STATE (IMPORTANTE) =====================
+const userContext = new Map();
+
+// ===================== CORS + LOG =====================
+
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -23,13 +28,13 @@ app.use((req, res, next) => {
   next();
 });
 
-// ===================== LOG =====================
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
   next();
 });
 
-// ===================== DAY MAP =====================
+// ===================== DÍAS =====================
+
 const dayMap = {
   domingo: 0,
   lunes: 1,
@@ -42,7 +47,8 @@ const dayMap = {
   sabado: 6
 };
 
-// ===================== DATE HELPERS =====================
+// ===================== FECHAS (FIX REAL) =====================
+
 const normalizeTime = (t) => t.trim().slice(0, 5);
 
 const getNextWeekday = (weekday) => {
@@ -54,10 +60,15 @@ const getNextWeekday = (weekday) => {
 
   result.setDate(today.getDate() + (diff === 0 ? 7 : diff));
 
-  return result.toISOString().split('T')[0]; // 🔥 FIX CONSISTENTE
+  const year = result.getFullYear();
+  const month = String(result.getMonth() + 1).padStart(2, '0');
+  const day = String(result.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
 };
 
 // ===================== WEBHOOK =====================
+
 app.post('/webhook', async (req, res) => {
   try {
     const body = req.body;
@@ -85,107 +96,112 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// ===================== CONTEXT =====================
-const userContext = new Map();
+// ===================== LOGICA =====================
 
-// ===================== LOGIC =====================
 const handleMessage = async (from, text) => {
+  try {
 
-  for (const [dayName, dayIndex] of Object.entries(dayMap)) {
-    if (text.includes(dayName)) {
+    // ---------- DETECTAR DÍA ----------
+    for (const [dayName, dayIndex] of Object.entries(dayMap)) {
+      if (text.includes(dayName)) {
 
-      const date = getNextWeekday(dayIndex);
-      userContext.set(from, { date });
+        const targetDate = getNextWeekday(dayIndex);
 
-      const slots = await getAvailableSlots(date);
+        userContext.set(from, { date: targetDate });
+
+        const slots = await getAvailableSlots(targetDate);
+
+        const readable = new Date(targetDate + "T00:00:00").toLocaleDateString('es-ES', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long'
+        });
+
+        await sendMessage(
+          from,
+          `📅 ${readable}\n\nHorarios:\n${slots.join(', ')}\n\nResponde con la hora (ej: 10:00)`
+        );
+
+        return;
+      }
+    }
+
+    // ---------- COMANDO GENERAL ----------
+    if (text.includes('cita') || text.includes('disponible')) {
+
+      const today = new Date().toISOString().split('T')[0];
+      const slots = await getAvailableSlots(today);
 
       await sendMessage(
         from,
-        `📅 ${date}\n\n${slots.join(', ')}\n\nResponde hora`
+        slots.length > 0
+          ? `✅ Hoy:\n${slots.join(', ')}`
+          : `❌ Hoy no hay disponibilidad`
       );
 
       return;
     }
-  }
 
-  if (/^\d{1,2}:\d{2}$/.test(text)) {
+    // ---------- HORA CON CONTEXTO ----------
+    if (/^\d{1,2}:\d{2}$/.test(text)) {
 
-    const context = userContext.get(from);
+      const time = normalizeTime(text);
+      const context = userContext.get(from);
 
-    if (!context?.date) {
-      return sendMessage(from, "Primero dime un día");
+      if (!context?.date) {
+        await sendMessage(from, "❌ Primero dime un día (ej: lunes)");
+        return;
+      }
+
+      const date = context.date;
+
+      const available = await getAvailableSlots(date);
+      const normalized = available.map(normalizeTime);
+
+      if (normalized.includes(time)) {
+
+        const datetime = `${date}T${time}:00`;
+
+        await bookAppointment(from, datetime);
+
+        await sendMessage(
+          from,
+          `✅ Cita confirmada para ${date} a las ${time}`
+        );
+
+        userContext.delete(from);
+
+      } else {
+        await sendMessage(from, `❌ Hora no disponible`);
+      }
+
+      return;
     }
 
-    const date = context.date;
-    const time = normalizeTime(text);
+    // ---------- DEFAULT ----------
+    await sendMessage(
+      from,
+      `👋 Escribe un día (ej: lunes) o "cita"`
+    );
 
-    const available = await getAvailableSlots(date);
-
-    if (available.map(normalizeTime).includes(time)) {
-
-      await bookAppointment(from, `${date}T${time}:00`);
-
-      userContext.delete(from);
-
-      return sendMessage(from, `OK cita ${date} ${time}`);
-    }
-
-    return sendMessage(from, "No disponible");
+  } catch (err) {
+    console.error(err);
+    await sendMessage(from, "❌ Error");
   }
-
-  return sendMessage(from, "Di un día");
 };
 
-// ===================== API CRUD (FIX CRÍTICO) =====================
+// ===================== API =====================
 
-// GET ALL
 app.get('/api/appointments', async (_, res) => {
   res.json(await getAllAppointments());
 });
 
-// GET ONE
-app.get('/api/appointments/:id', async (req, res) => {
-  const data = await getAppointmentById(req.params.id);
-  if (!data) return res.sendStatus(404);
-  res.json(data);
-});
-
-app.get('/api/slots/:date', async (req, res) => {
-  try {
-    const { date } = req.params;
-
-    const slots = await getAvailableSlots(date);
-
-    res.json(slots);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error fetching slots' });
-  }
-});
-
-// CREATE
-app.post('/api/appointments', async (req, res) => {
-  const { phone, datetime, service } = req.body;
-  const result = await bookAppointment(phone, datetime, service);
-  res.json(result);
-});
-
-// UPDATE
-app.put('/api/appointments/:id', async (req, res) => {
-  const result = await updateAppointment(req.params.id, req.body);
-  if (!result) return res.sendStatus(404);
-  res.json(result);
-});
-
-// DELETE
-app.delete('/api/appointments/:id', async (req, res) => {
-  const result = await deleteAppointment(req.params.id);
-  if (!result) return res.sendStatus(404);
-  res.json(result);
-});
-
 // ===================== START =====================
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 ${PORT}`));
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on ${PORT}`);
+});
 
 module.exports = app;
