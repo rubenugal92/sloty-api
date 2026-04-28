@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "express": "^4.18.0",
-    "pg": "^8.11.0"
+    "pg": "^8.11.0",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^8.5.1"
   },
   "keywords": ["whatsapp", "api", "appointment", "nodejs"],
   "author": "",
