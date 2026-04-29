@@ -458,13 +458,13 @@ app.get('/api/fisios/:id', verifyToken, async (req, res) => {
 
 app.post('/api/fisios', verifyToken, async (req, res) => {
   try {
-    const { name, email, phone, specialties } = req.body;
+    const { name, email, phone, specialties, license } = req.body;
 
     if (!name || !email) {
       return res.status(400).json({ error: 'Name and email are required' });
     }
 
-    const fisio = await createFisio(name, email, phone, specialties);
+    const fisio = await createFisio(name, email, phone, specialties, license);
     res.status(201).json(fisio);
   } catch (err) {
     console.error(err);

@@ -33,6 +33,7 @@ const pool = new Pool({
         email TEXT UNIQUE NOT NULL,
         phone TEXT,
         specialties TEXT,
+        license TEXT,
         is_active BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -192,12 +193,12 @@ const getFisioById = async (id) => {
   return result.rows[0] || null
 }
 
-const createFisio = async (name, email, phone = null, specialties = null) => {
+const createFisio = async (name, email, phone = null, specialties = null, license = null) => {
   const result = await pool.query(
-    `INSERT INTO fisios (name, email, phone, specialties)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO fisios (name, email, phone, specialties, license)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
-    [name, email, phone, specialties]
+    [name, email, phone, specialties, license]
   )
   return result.rows[0]
 }
@@ -208,7 +209,7 @@ const updateFisio = async (id, updates) => {
   let i = 1
 
   for (const [k, v] of Object.entries(updates)) {
-    if (['name', 'email', 'phone', 'specialties', 'is_active'].includes(k)) {
+    if (['name', 'email', 'phone', 'specialties', 'license', 'is_active'].includes(k)) {
       fields.push(`${k} = $${i}`)
       values.push(v)
       i++
