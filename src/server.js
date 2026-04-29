@@ -467,11 +467,11 @@ app.post('/api/fisios', verifyToken, async (req, res) => {
     const fisio = await createFisio(name, email, phone, specialties, license);
     res.status(201).json(fisio);
   } catch (err) {
-    console.error(err);
+    console.error('Error creating fisio:', err);
     if (err.code === '23505') { // Unique constraint violation
       return res.status(409).json({ error: 'Email already exists' });
     }
-    res.status(500).json({ error: 'Error creating fisio' });
+    res.status(500).json({ error: err.message || 'Error creating fisio' });
   }
 });
 

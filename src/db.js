@@ -56,6 +56,12 @@ const pool = new Pool({
       )
     `)
 
+    // Agregar columna license si no existe (para bases de datos existentes)
+    await client.query(`
+      ALTER TABLE fisios 
+      ADD COLUMN IF NOT EXISTS license TEXT
+    `)
+
     // Agregar columna fisio_id si no existe (para bases de datos existentes)
     await client.query(`
       ALTER TABLE appointments 
