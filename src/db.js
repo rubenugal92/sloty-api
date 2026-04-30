@@ -67,6 +67,20 @@ const pool = new Pool({
       ALTER TABLE appointments 
       ADD COLUMN IF NOT EXISTS fisio_id INTEGER REFERENCES fisios(id)
     `)
+
+    // Tabla de plannings de fisios
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS fisio_planning (
+        id SERIAL PRIMARY KEY,
+        fisio_id INTEGER NOT NULL REFERENCES fisios(id) ON DELETE CASCADE,
+        date DATE NOT NULL,
+        type TEXT NOT NULL CHECK (type IN ('work', 'vacation', 'sick')),
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(fisio_id, date)
+      )
+    `)
   } catch (err) {
     console.error('Table creation failed:', err)
   } finally {
@@ -275,7 +289,118 @@ const getUserByUsername = async (username) => {
   return result.rows[0] || null
 }
 
-// ===================== EXPORT (CRÍTICO) =====================
+// ===================== PLANNING =====================
+const getPlanningByFisioAndDate = async (fisioId, date) => {
+  const result = await pool.query(
+    `SELECT * FROM fisio_planning WHERE fisio_id = $1 AND date = $2`,
+    [fisioId, date]
+  )
+  return result.rows[0] || null
+}
+
+const getPlanningByFisio = async (fisioId, startDate = null, endDate = null) => {
+  let query = `SELECT * FROM fisio_planning WHERE fisio_id = $1`
+  const params = [fisioId]
+  let i = 2
+
+  if (startDate) {
+    query += ` AND date >= $${i}`
+    params.push(startDate)
+    i++
+  }
+  if (endDate) {
+    query += ` AND date <= $${i}`
+    params.push(endDate)
+    i++
+  }
+
+  query += ` ORDER BY date ASC`
+
+  const result = await pool.query(query, params)
+  return result.rows
+}
+
+const getAllPlanning = async (startDate = null, endDate = null) => {
+  let query = `SELECT * FROM fisio_planning WHERE 1=1`
+  const params = []
+  let i = 1
+
+  if (startDate) {
+    query += ` AND date >= $${i}`
+    params.push(startDate)
+    i++
+  }
+  if (endDate) {
+    query += ` AND date <= $${i}`
+    params.push(endDate)
+    i++
+  }
+
+  query += ` ORDER BY fisio_id, date ASC`
+
+  const result = await pool.query(query, params)
+  return result.rows
+}
+
+const createPlanning = async (fisioId, date, type, notes = null) => {
+  const result = await pool.query(
+    `INSERT INTO fisio_planning (fisio_id, date, type, notes)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (fisio_id, date) DO UPDATE
+     SET type = $3, notes = $4, updated_at = NOW()
+     RETURNING *`,
+    [fisioId, date, type, notes]
+  )
+  return result.rows[0]
+}
+
+const updatePlanning = async (id, updates) => {
+  const fields = []
+  const values = []
+  let i = 1
+
+  for (const [k, v] of Object.entries(updates)) {
+    if (['type', 'notes'].includes(k)) {
+      fields.push(`${k} = $${i}`)
+      values.push(v)
+      i++
+    }
+  }
+
+  if (fields.length === 0) return null
+
+  fields.push(`updated_at = $${i}`)
+  values.push(new Date())
+  i++
+
+  values.push(id)
+
+  const result = await pool.query(
+    `UPDATE fisio_planning SET ${fields.join(', ')}
+     WHERE id = $${i}
+     RETURNING *`,
+    values
+  )
+
+  return result.rows[0]
+}
+
+const deletePlanning = async (id) => {
+  const result = await pool.query(
+    `DELETE FROM fisio_planning WHERE id = $1 RETURNING *`,
+    [id]
+  )
+  return result.rows[0]
+}
+
+const deletePlanningByFisioAndDate = async (fisioId, date) => {
+  const result = await pool.query(
+    `DELETE FROM fisio_planning WHERE fisio_id = $1 AND date = $2 RETURNING *`,
+    [fisioId, date]
+  )
+  return result.rows[0]
+}
+
 module.exports = {
   pool,
   getAvailableSlots,
@@ -291,5 +416,12 @@ module.exports = {
   deleteFisio,
   createUser,
   getUserByEmail,
-  getUserByUsername
+  getUserByUsername,
+  getPlanningByFisioAndDate,
+  getPlanningByFisio,
+  getAllPlanning,
+  createPlanning,
+  updatePlanning,
+  deletePlanning,
+  deletePlanningByFisioAndDate
 }

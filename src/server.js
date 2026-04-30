@@ -16,7 +16,14 @@ const {
   deleteFisio,
   createUser,
   getUserByEmail,
-  getUserByUsername
+  getUserByUsername,
+  getPlanningByFisioAndDate,
+  getPlanningByFisio,
+  getAllPlanning,
+  createPlanning,
+  updatePlanning,
+  deletePlanning,
+  deletePlanningByFisioAndDate
 } = require('./db');
 
 const { sendMessage } = require('./whatsapp');
@@ -245,6 +252,15 @@ const handleMessage = async (from, text) => {
       }
 
       const selectedFisio = fisios[fisioIndex];
+
+      // Validar si el fisio está disponible ese día (no de vacaciones ni de baja)
+      const planning = await getPlanningByFisioAndDate(selectedFisio.id, context.date);
+      if (planning && (planning.type === 'vacation' || planning.type === 'sick')) {
+        await sendMessage(from, `❌ ${selectedFisio.name} no está disponible en ${context.date}. Elige otro día o fisio.`);
+        userContext.delete(from);
+        return;
+      }
+
       userContext.set(from, { ...context, fisio_id: selectedFisio.id, fisioName: selectedFisio.name, step: 'selecting-time' });
 
       const slots = await getAvailableSlots(context.date, selectedFisio.id);
@@ -506,6 +522,115 @@ app.delete('/api/fisios/:id', verifyToken, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error deleting fisio' });
+  }
+});
+
+// ===================== PLANNING ENDPOINTS =====================
+
+app.get('/api/planning', verifyToken, async (req, res) => {
+  try {
+    const { fisio_id, start_date, end_date } = req.query;
+    
+    // Si el usuario es adminMid, puede ver todos los plannings
+    if (req.user.role === 'adminMid') {
+      const planning = await getAllPlanning(start_date, end_date);
+      return res.json(planning);
+    }
+
+    // Si no es adminMid, solo puede ver el planning de un fisio específico
+    if (!fisio_id) {
+      return res.status(400).json({ error: 'fisio_id is required' });
+    }
+
+    const planning = await getPlanningByFisio(fisio_id, start_date, end_date);
+    res.json(planning);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error fetching planning' });
+  }
+});
+
+app.get('/api/planning/fisio/:fisio_id', verifyToken, async (req, res) => {
+  try {
+    const { fisio_id } = req.params;
+    const { start_date, end_date } = req.query;
+
+    // Solo adminMid o el propio fisio pueden ver el planning
+    if (req.user.role !== 'adminMid' && req.user.id !== parseInt(fisio_id)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const planning = await getPlanningByFisio(fisio_id, start_date, end_date);
+    res.json(planning);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error fetching planning' });
+  }
+});
+
+app.post('/api/planning', verifyToken, async (req, res) => {
+  try {
+    const { fisio_id, date, type, notes } = req.body;
+
+    if (!fisio_id || !date || !type) {
+      return res.status(400).json({ error: 'fisio_id, date, and type are required' });
+    }
+
+    // Solo adminMid puede crear plannings
+    if (req.user.role !== 'adminMid') {
+      return res.status(403).json({ error: 'Only adminMid can create planning' });
+    }
+
+    const planning = await createPlanning(fisio_id, date, type, notes);
+    res.status(201).json(planning);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error creating planning' });
+  }
+});
+
+app.put('/api/planning/:id', verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No updates provided' });
+    }
+
+    // Solo adminMid puede actualizar plannings
+    if (req.user.role !== 'adminMid') {
+      return res.status(403).json({ error: 'Only adminMid can update planning' });
+    }
+
+    const planning = await updatePlanning(id, updates);
+    if (!planning) {
+      return res.status(404).json({ error: 'Planning not found' });
+    }
+    res.json(planning);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error updating planning' });
+  }
+});
+
+app.delete('/api/planning/:id', verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Solo adminMid puede eliminar plannings
+    if (req.user.role !== 'adminMid') {
+      return res.status(403).json({ error: 'Only adminMid can delete planning' });
+    }
+
+    const planning = await deletePlanning(id);
+    if (!planning) {
+      return res.status(404).json({ error: 'Planning not found' });
+    }
+    res.json({ message: 'Planning deleted', planning });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error deleting planning' });
   }
 });
 
