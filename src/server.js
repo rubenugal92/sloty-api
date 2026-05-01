@@ -530,13 +530,13 @@ app.get('/api/planning', verifyToken, async (req, res) => {
   try {
     const { user_id, start_date, end_date } = req.query;
     
-    // Si el usuario es adminMid, puede ver todos los plannings
-    if (req.user.role === 'adminMid') {
+    // Si el usuario es admin, puede ver todos los plannings
+    if (req.user.role === 'admin') {
       const planning = await getAllPlanning(start_date, end_date);
       return res.json(planning);
     }
 
-    // Si no es adminMid, solo puede ver el planning de un usuario específico
+    // Si no es admin, solo puede ver el planning de un usuario específico
     if (!user_id) {
       return res.status(400).json({ error: 'user_id is required' });
     }
@@ -554,8 +554,8 @@ app.get('/api/planning/user/:user_id', verifyToken, async (req, res) => {
     const { user_id } = req.params;
     const { start_date, end_date } = req.query;
 
-    // Solo adminMid o el propio usuario pueden ver el planning
-    if (req.user.role !== 'adminMid' && req.user.id !== parseInt(user_id)) {
+    // Solo admin o el propio usuario pueden ver el planning
+    if (req.user.role !== 'admin' && req.user.id !== parseInt(user_id)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -575,9 +575,9 @@ app.post('/api/planning', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'user_id, date, and type are required' });
     }
 
-    // Solo adminMid puede crear plannings
-    if (req.user.role !== 'adminMid') {
-      return res.status(403).json({ error: 'Only adminMid can create planning' });
+    // Solo admin puede crear plannings
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admin can create planning' });
     }
 
     const planning = await createPlanning(user_id, date, type, notes);
@@ -597,9 +597,9 @@ app.put('/api/planning/:id', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'No updates provided' });
     }
 
-    // Solo adminMid puede actualizar plannings
-    if (req.user.role !== 'adminMid') {
-      return res.status(403).json({ error: 'Only adminMid can update planning' });
+    // Solo admin puede actualizar plannings
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admin can update planning' });
     }
 
     const planning = await updatePlanning(id, updates);
@@ -617,9 +617,9 @@ app.delete('/api/planning/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Solo adminMid puede eliminar plannings
-    if (req.user.role !== 'adminMid') {
-      return res.status(403).json({ error: 'Only adminMid can delete planning' });
+    // Solo admin puede eliminar plannings
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admin can delete planning' });
     }
 
     const planning = await deletePlanning(id);
