@@ -154,7 +154,7 @@ app.post('/webhook', async (req, res) => {
 // Registro
 app.post('/auth/register', async (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    const { username, email, password, specialities, phone, type } = req.body;
 
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -166,7 +166,7 @@ app.post('/auth/register', async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await createUser(username, email, hashedPassword);
+    const user = await createUser(username, email, hashedPassword, specialities, phone, type);
 
     res.status(201).json({ message: 'User registered successfully', user });
   } catch (err) {
@@ -473,13 +473,13 @@ app.get('/api/users/:id', verifyToken, async (req, res) => {
 
 app.post('/api/users', verifyToken, async (req, res) => {
   try {
-    const { name, email, phone, specialties, license } = req.body;
+    const { name, email, phone, type, specialties } = req.body;
 
     if (!name || !email) {
       return res.status(400).json({ error: 'Name and email are required' });
     }
 
-    const user = await createUser(name, email, phone, specialties, license);
+    const user = await createUser(name, email, phone, type, specialties);
     res.status(201).json(user);
   } catch (err) {
     console.error('Error creating user:', err);
