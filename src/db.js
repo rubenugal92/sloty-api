@@ -180,7 +180,7 @@ const deleteAppointment = async (id) => {
 }
 
 // ===================== users =====================
-const getAllusers = async () => {
+const getAllUsers = async () => {
   const result = await pool.query(
     `SELECT * FROM users WHERE is_active = true ORDER BY name ASC`
   )
@@ -382,7 +382,7 @@ module.exports = {
   getAppointmentById,
   updateAppointment,
   deleteAppointment,
-  getAllusers,
+  getAllUsers,
   getUserById,
   createUser,
   updateUser,
