@@ -13,7 +13,7 @@ const {
   getUserById,
   createUser,
   updateUser,
-  deleteUser
+  deleteUser,
   getUserByEmail,
   getUserByUsername,
   getPlanningByUserAndDate,
