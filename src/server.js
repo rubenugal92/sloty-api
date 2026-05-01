@@ -201,7 +201,7 @@ app.post('/auth/login', async (req, res) => {
       { expiresIn: '24h' }
     );
 
-    res.json({ message: 'Login successful', token, user: { id: user.id, email: user.email, username: user.username } });
+    res.json({ message: 'Login successful', token, user: { id: user.id, email: user.email, username: user.username, role: user.role } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error logging in' });
