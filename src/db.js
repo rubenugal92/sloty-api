@@ -195,12 +195,12 @@ const getUserById = async (id) => {
   return result.rows[0] || null
 }
 
-const createUser = async (name, email, password, phone = null, type = null, specialties = null) => {
+const createUser = async (username,name, email, password, phone = null, type = null, specialties = null) => {
   const result = await pool.query(
-    `INSERT INTO users (name, email, password, phone, type, specialties)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO users (username, name, email, password, phone, type, specialties)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [name, email, password, phone, type, specialties]
+    [username, name, email, password, phone, type, specialties]
   )
   return result.rows[0]
 }
@@ -211,7 +211,7 @@ const updateUser = async (id, updates) => {
   let i = 1
 
   for (const [k, v] of Object.entries(updates)) {
-    if (['name', 'email', 'phone', 'type', 'specialties', 'is_active'].includes(k)) {
+    if (['username', 'name', 'email', 'phone', 'type', 'specialties', 'is_active'].includes(k)) {
       fields.push(`${k} = $${i}`)
       values.push(v)
       i++

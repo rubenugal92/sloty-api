@@ -154,7 +154,7 @@ app.post('/webhook', async (req, res) => {
 // Registro
 app.post('/auth/register', async (req, res) => {
   try {
-    const { username, email, password, specialities, phone, type } = req.body;
+    const { username, name, email, password, specialities, phone, type } = req.body;
 
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -166,7 +166,7 @@ app.post('/auth/register', async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await createUser(username, email, hashedPassword, specialities, phone, type);
+    const user = await createUser(username, name, email, hashedPassword, specialities, phone, type);
 
     res.status(201).json({ message: 'User registered successfully', user });
   } catch (err) {
@@ -200,7 +200,7 @@ app.post('/auth/login', async (req, res) => {
       { expiresIn: '24h' }
     );
 
-    res.json({ message: 'Login successful', token, user: { id: user.id, email: user.email, username: user.username, role: user.role } });
+    res.json({ message: 'Login successful', token, user: { id: user.id, email: user.email, username: user.username, name: user.name, role: user.role } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error logging in' });
