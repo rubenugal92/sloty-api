@@ -246,15 +246,6 @@ const deleteUser = async (id) => {
 }
 
 // ===================== USUARIOS =====================
-const createUser = async (username, email, password, role = 'admin') => {
-  const result = await pool.query(
-    `INSERT INTO users (username, email, password, role)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id, username, email, role`,
-    [username, email, password, role]
-  )
-  return result.rows[0]
-}
 
 const getUserByEmail = async (email) => {
   const result = await pool.query(
@@ -397,7 +388,6 @@ module.exports = {
   createUser,
   updateUser,
   deleteUser,
-  createUser,
   getUserByEmail,
   getUserByUsername,
   getPlanningByUserAndDate,
