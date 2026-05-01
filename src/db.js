@@ -12,41 +12,35 @@ const pool = new Pool({
 (async () => {
   const client = await pool.connect()
   try {
-    // Tabla de usuarios para login
+    // Tabla unificada de usuarios (reemplaza usuarios + fisios)
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
-        username TEXT UNIQUE NOT NULL,
+        username TEXT UNIQUE,
         email TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
-        role TEXT DEFAULT 'admin',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `)
-
-    // Tabla de fisioterapeutas
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS fisios (
-        id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL,
-        email TEXT UNIQUE NOT NULL,
+        name TEXT,
         phone TEXT,
         specialties TEXT,
         license TEXT,
+        type TEXT DEFAULT 'fisio',
+        role TEXT DEFAULT 'user',
         is_active BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `)
 
-    // Tabla de citas (modificada con fisio_id)
+    // LEGACY: Tabla fisios ya no se usa (ahora todos son users con type='fisio')
+    // Se mantiene solo para backward compatibility
+
+    // Tabla de citas (con user_id)
     await client.query(`
       CREATE TABLE IF NOT EXISTS appointments (
         id SERIAL PRIMARY KEY,
         phone TEXT NOT NULL,
         datetime TIMESTAMP NOT NULL,
-        fisio_id INTEGER REFERENCES fisios(id),
+        user_id INTEGER REFERENCES users(id),
         duration INTEGER DEFAULT 60,
         service TEXT DEFAULT 'physio',
         status TEXT DEFAULT 'confirmed',
@@ -56,29 +50,18 @@ const pool = new Pool({
       )
     `)
 
-    // Agregar columna license si no existe (para bases de datos existentes)
-    await client.query(`
-      ALTER TABLE fisios 
-      ADD COLUMN IF NOT EXISTS license TEXT
-    `)
 
-    // Agregar columna fisio_id si no existe (para bases de datos existentes)
+    // Tabla de plannings de usuarios
     await client.query(`
-      ALTER TABLE appointments 
-      ADD COLUMN IF NOT EXISTS fisio_id INTEGER REFERENCES fisios(id)
-    `)
-
-    // Tabla de plannings de fisios
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS fisio_planning (
+      CREATE TABLE IF NOT EXISTS planning (
         id SERIAL PRIMARY KEY,
-        fisio_id INTEGER NOT NULL REFERENCES fisios(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         date DATE NOT NULL,
         type TEXT NOT NULL CHECK (type IN ('work', 'vacation', 'sick')),
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(fisio_id, date)
+        UNIQUE(user_id, date)
       )
     `)
   } catch (err) {
