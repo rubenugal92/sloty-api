@@ -265,14 +265,14 @@ const getUserByUsername = async (username) => {
 // ===================== PLANNING =====================
 const getPlanningByUserAndDate = async (userId, date) => {
   const result = await pool.query(
-    `SELECT * FROM user_planning WHERE user_id = $1 AND date = $2`,
+    `SELECT * FROM planning WHERE user_id = $1 AND date = $2`,
     [userId, date]
   )
   return result.rows[0] || null
 }
 
 const getPlanningByUser = async (userId, startDate = null, endDate = null) => {
-  let query = `SELECT * FROM user_planning WHERE user_id = $1`
+  let query = `SELECT * FROM planning WHERE user_id = $1`
   const params = [userId]
   let i = 2
 
@@ -294,7 +294,7 @@ const getPlanningByUser = async (userId, startDate = null, endDate = null) => {
 }
 
 const getAllPlanning = async (startDate = null, endDate = null) => {
-  let query = `SELECT * FROM user_planning WHERE 1=1`
+  let query = `SELECT * FROM planning WHERE 1=1`
   const params = []
   let i = 1
 
@@ -317,7 +317,7 @@ const getAllPlanning = async (startDate = null, endDate = null) => {
 
 const createPlanning = async (userId, date, type, notes = null) => {
   const result = await pool.query(
-    `INSERT INTO user_planning (user_id, date, type, notes)
+    `INSERT INTO planning (user_id, date, type, notes)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (user_id, date) DO UPDATE
      SET type = $3, notes = $4, updated_at = NOW()
@@ -349,7 +349,7 @@ const updatePlanning = async (id, updates) => {
   values.push(id)
 
   const result = await pool.query(
-    `UPDATE user_planning SET ${fields.join(', ')}
+    `UPDATE planning SET ${fields.join(', ')}
      WHERE id = $${i}
      RETURNING *`,
     values
@@ -360,7 +360,7 @@ const updatePlanning = async (id, updates) => {
 
 const deletePlanning = async (id) => {
   const result = await pool.query(
-    `DELETE FROM user_planning WHERE id = $1 RETURNING *`,
+    `DELETE FROM planning WHERE id = $1 RETURNING *`,
     [id]
   )
   return result.rows[0]
@@ -368,7 +368,7 @@ const deletePlanning = async (id) => {
 
 const deletePlanningByUserAndDate = async (userId, date) => {
   const result = await pool.query(
-    `DELETE FROM user_planning WHERE user_id = $1 AND date = $2 RETURNING *`,
+    `DELETE FROM planning WHERE user_id = $1 AND date = $2 RETURNING *`,
     [userId, date]
   )
   return result.rows[0]
