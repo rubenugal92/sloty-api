@@ -12,7 +12,7 @@ const pool = new Pool({
 (async () => {
   const client = await pool.connect()
   try {
-    // Tabla unificada de usuarios (reemplaza usuarios + fisios)
+    // Tabla unificada de usuarios (reemplaza usuarios + users)
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -31,7 +31,7 @@ const pool = new Pool({
       )
     `)
 
-    // LEGACY: Tabla fisios ya no se usa (ahora todos son users con type='fisio')
+    // LEGACY: Tabla users ya no se usa (ahora todos son users con type='fisio')
     // Se mantiene solo para backward compatibility
 
     // Tabla de citas (con user_id)
@@ -72,7 +72,7 @@ const pool = new Pool({
 })();
 
 // ===================== SLOTS =====================
-const getAvailableSlots = async (date, fisioId = null) => {
+const getAvailableSlots = async (date, userId = null) => {
   const start = `${date}T00:00:00`
   const end = `${date}T23:59:59`
 
@@ -91,9 +91,9 @@ const getAvailableSlots = async (date, fisioId = null) => {
   let query = `SELECT datetime FROM appointments WHERE datetime >= $1 AND datetime <= $2 AND status != 'cancelled'`
   let params = [start, end]
 
-  if (fisioId) {
-    query += ` AND fisio_id = $3`
-    params.push(fisioId)
+  if (userId) {
+    query += ` AND user_id = $3`
+    params.push(userId)
   }
 
   const result = await pool.query(query, params)
@@ -109,10 +109,10 @@ const getAvailableSlots = async (date, fisioId = null) => {
 }
 
 // ===================== CREATE =====================
-const bookAppointment = async (phone, datetime, service = 'physio', fisioId = null) => {
+const bookAppointment = async (phone, datetime, service = 'physio', userId = null) => {
   const check = await pool.query(
-    `SELECT id FROM appointments WHERE datetime = $1 AND fisio_id = $2 AND status != 'cancelled'`,
-    [datetime, fisioId]
+    `SELECT id FROM appointments WHERE datetime = $1 AND user_id = $2 AND status != 'cancelled'`,
+    [datetime, userId]
   )
 
   if (check.rows.length > 0) {
@@ -120,10 +120,10 @@ const bookAppointment = async (phone, datetime, service = 'physio', fisioId = nu
   }
 
   const result = await pool.query(
-    `INSERT INTO appointments (phone, datetime, service, fisio_id)
+    `INSERT INTO appointments (phone, datetime, service, user_id)
      VALUES ($1, $2, $3, $4)
      RETURNING *`,
-    [phone, datetime, service, fisioId]
+    [phone, datetime, service, userId]
   )
 
   return result.rows[0]
@@ -180,25 +180,25 @@ const deleteAppointment = async (id) => {
   return result.rows[0]
 }
 
-// ===================== FISIOS =====================
-const getAllFisios = async () => {
+// ===================== users =====================
+const getAllusers = async () => {
   const result = await pool.query(
-    `SELECT * FROM fisios WHERE is_active = true ORDER BY name ASC`
+    `SELECT * FROM users WHERE is_active = true ORDER BY name ASC`
   )
   return result.rows
 }
 
-const getFisioById = async (id) => {
+const getUserById = async (id) => {
   const result = await pool.query(
-    `SELECT * FROM fisios WHERE id = $1`,
+    `SELECT * FROM users WHERE id = $1`,
     [id]
   )
   return result.rows[0] || null
 }
 
-const createFisio = async (name, email, phone = null, specialties = null, license = null) => {
+const createUser = async (name, email, phone = null, specialties = null, license = null) => {
   const result = await pool.query(
-    `INSERT INTO fisios (name, email, phone, specialties, license)
+    `INSERT INTO users (name, email, phone, specialties, license)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
     [name, email, phone, specialties, license]
@@ -206,7 +206,7 @@ const createFisio = async (name, email, phone = null, specialties = null, licens
   return result.rows[0]
 }
 
-const updateFisio = async (id, updates) => {
+const updateUser = async (id, updates) => {
   const fields = []
   const values = []
   let i = 1
@@ -228,7 +228,7 @@ const updateFisio = async (id, updates) => {
   values.push(id)
 
   const result = await pool.query(
-    `UPDATE fisios SET ${fields.join(', ')}
+    `UPDATE users SET ${fields.join(', ')}
      WHERE id = $${i}
      RETURNING *`,
     values
@@ -237,9 +237,9 @@ const updateFisio = async (id, updates) => {
   return result.rows[0]
 }
 
-const deleteFisio = async (id) => {
+const deleteUser = async (id) => {
   const result = await pool.query(
-    `UPDATE fisios SET is_active = false WHERE id = $1 RETURNING *`,
+    `UPDATE users SET is_active = false WHERE id = $1 RETURNING *`,
     [id]
   )
   return result.rows[0]
@@ -273,17 +273,17 @@ const getUserByUsername = async (username) => {
 }
 
 // ===================== PLANNING =====================
-const getPlanningByFisioAndDate = async (fisioId, date) => {
+const getPlanningByUserAndDate = async (userId, date) => {
   const result = await pool.query(
-    `SELECT * FROM fisio_planning WHERE fisio_id = $1 AND date = $2`,
-    [fisioId, date]
+    `SELECT * FROM user_planning WHERE user_id = $1 AND date = $2`,
+    [userId, date]
   )
   return result.rows[0] || null
 }
 
-const getPlanningByFisio = async (fisioId, startDate = null, endDate = null) => {
-  let query = `SELECT * FROM fisio_planning WHERE fisio_id = $1`
-  const params = [fisioId]
+const getPlanningByUser = async (userId, startDate = null, endDate = null) => {
+  let query = `SELECT * FROM user_planning WHERE user_id = $1`
+  const params = [userId]
   let i = 2
 
   if (startDate) {
@@ -304,7 +304,7 @@ const getPlanningByFisio = async (fisioId, startDate = null, endDate = null) => 
 }
 
 const getAllPlanning = async (startDate = null, endDate = null) => {
-  let query = `SELECT * FROM fisio_planning WHERE 1=1`
+  let query = `SELECT * FROM user_planning WHERE 1=1`
   const params = []
   let i = 1
 
@@ -319,20 +319,20 @@ const getAllPlanning = async (startDate = null, endDate = null) => {
     i++
   }
 
-  query += ` ORDER BY fisio_id, date ASC`
+  query += ` ORDER BY user_id, date ASC`
 
   const result = await pool.query(query, params)
   return result.rows
 }
 
-const createPlanning = async (fisioId, date, type, notes = null) => {
+const createPlanning = async (userId, date, type, notes = null) => {
   const result = await pool.query(
-    `INSERT INTO fisio_planning (fisio_id, date, type, notes)
+    `INSERT INTO user_planning (user_id, date, type, notes)
      VALUES ($1, $2, $3, $4)
-     ON CONFLICT (fisio_id, date) DO UPDATE
+     ON CONFLICT (user_id, date) DO UPDATE
      SET type = $3, notes = $4, updated_at = NOW()
      RETURNING *`,
-    [fisioId, date, type, notes]
+    [userId, date, type, notes]
   )
   return result.rows[0]
 }
@@ -359,7 +359,7 @@ const updatePlanning = async (id, updates) => {
   values.push(id)
 
   const result = await pool.query(
-    `UPDATE fisio_planning SET ${fields.join(', ')}
+    `UPDATE user_planning SET ${fields.join(', ')}
      WHERE id = $${i}
      RETURNING *`,
     values
@@ -370,16 +370,16 @@ const updatePlanning = async (id, updates) => {
 
 const deletePlanning = async (id) => {
   const result = await pool.query(
-    `DELETE FROM fisio_planning WHERE id = $1 RETURNING *`,
+    `DELETE FROM user_planning WHERE id = $1 RETURNING *`,
     [id]
   )
   return result.rows[0]
 }
 
-const deletePlanningByFisioAndDate = async (fisioId, date) => {
+const deletePlanningByUserAndDate = async (userId, date) => {
   const result = await pool.query(
-    `DELETE FROM fisio_planning WHERE fisio_id = $1 AND date = $2 RETURNING *`,
-    [fisioId, date]
+    `DELETE FROM user_planning WHERE user_id = $1 AND date = $2 RETURNING *`,
+    [userId, date]
   )
   return result.rows[0]
 }
@@ -392,19 +392,19 @@ module.exports = {
   getAppointmentById,
   updateAppointment,
   deleteAppointment,
-  getAllFisios,
-  getFisioById,
-  createFisio,
-  updateFisio,
-  deleteFisio,
+  getAllusers,
+  getUserById,
+  createUser,
+  updateUser,
+  deleteUser,
   createUser,
   getUserByEmail,
   getUserByUsername,
-  getPlanningByFisioAndDate,
-  getPlanningByFisio,
+  getPlanningByUserAndDate,
+  getPlanningByUser,
   getAllPlanning,
   createPlanning,
   updatePlanning,
   deletePlanning,
-  deletePlanningByFisioAndDate
+  deletePlanningByUserAndDate
 }

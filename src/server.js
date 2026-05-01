@@ -9,21 +9,20 @@ const {
   getAppointmentById,
   updateAppointment,
   deleteAppointment,
-  getAllFisios,
-  getFisioById,
-  createFisio,
-  updateFisio,
-  deleteFisio,
+  getAllUsers,
+  getUserById,
   createUser,
+  updateUser,
+  deleteUser
   getUserByEmail,
   getUserByUsername,
-  getPlanningByFisioAndDate,
-  getPlanningByFisio,
+  getPlanningByUserAndDate,
+  getPlanningByUser,
   getAllPlanning,
   createPlanning,
   updatePlanning,
   deletePlanning,
-  deletePlanningByFisioAndDate
+  deletePlanningByUserAndDate
 } = require('./db');
 
 const { sendMessage } = require('./whatsapp');
@@ -225,55 +224,55 @@ const handleMessage = async (from, text) => {
           month: 'long'
         });
 
-        // Obtener todos los fisios disponibles
-        const fisios = await getAllFisios();
-        const fisioList = fisios.map((f, i) => `${i + 1}. ${f.name}`).join('\n');
+        // Obtener todos los users disponibles
+        const users = await getAllUsers();
+        const userList = users.map((u, i) => `${i + 1}. ${u.name}`).join('\n');
 
-        userContext.set(from, { date: targetDate, step: 'selecting-fisio' });
+        userContext.set(from, { date: targetDate, step: 'selecting-user' });
 
         await sendMessage(
           from,
-          `📅 ${readable}\n\n¿Con qué fisioterapeuta deseas la sesión?\n\n${fisioList}\n\nResponde con el número (ej: 1)`
+          `📅 ${readable}\n\n¿Con qué fisioterapeuta deseas la sesión?\n\n${userList}\n\nResponde con el número (ej: 1)`
         );
 
         return;
       }
     }
 
-    // ---------- SELECCIONANDO FISIO ----------
+    // ---------- SELECCIONANDO User ----------
     const context = userContext.get(from);
-    if (context?.step === 'selecting-fisio' && /^\d+$/.test(text)) {
-      const fisios = await getAllFisios();
-      const fisioIndex = parseInt(text) - 1;
+    if (context?.step === 'selecting-user' && /^\d+$/.test(text)) {
+      const users = await getAllUsers();
+      const userIndex = parseInt(text) - 1;
 
-      if (fisioIndex < 0 || fisioIndex >= fisios.length) {
+      if (userIndex < 0 || userIndex >= users.length) {
         await sendMessage(from, `❌ Número inválido. Intenta de nuevo.`);
         return;
       }
 
-      const selectedFisio = fisios[fisioIndex];
+      const selectedUser = users[userIndex];
 
-      // Validar si el fisio está disponible ese día (no de vacaciones ni de baja)
-      const planning = await getPlanningByFisioAndDate(selectedFisio.id, context.date);
+      // Validar si el usuario está disponible ese día (no de vacaciones ni de baja)
+      const planning = await getPlanningByUserAndDate(selectedUser.id, context.date);
       if (planning && (planning.type === 'vacation' || planning.type === 'sick')) {
-        await sendMessage(from, `❌ ${selectedFisio.name} no está disponible en ${context.date}. Elige otro día o fisio.`);
+        await sendMessage(from, `❌ ${selectedUser.name} no está disponible en ${context.date}. Elige otro día o usuario.`);
         userContext.delete(from);
         return;
       }
 
-      userContext.set(from, { ...context, fisio_id: selectedFisio.id, fisioName: selectedFisio.name, step: 'selecting-time' });
+      userContext.set(from, { ...context, user_id: selectedUser.id, userName: selectedUser.name, step: 'selecting-time' });
 
-      const slots = await getAvailableSlots(context.date, selectedFisio.id);
+      const slots = await getAvailableSlots(context.date, selectedUser.id);
 
       if (slots.length === 0) {
-        await sendMessage(from, `❌ ${selectedFisio.name} no tiene disponibilidad en ${context.date}. Elige otro día.`);
+        await sendMessage(from, `❌ ${selectedUser.name} no tiene disponibilidad en ${context.date}. Elige otro día.`);
         userContext.delete(from);
         return;
       }
 
       await sendMessage(
         from,
-        `✅ Con ${selectedFisio.name}\n\nHorarios disponibles:\n${slots.join(', ')}\n\nResponde con la hora (ej: 10:00)`
+        `✅ Con ${selectedUser.name}\n\nHorarios disponibles:\n${slots.join(', ')}\n\nResponde con la hora (ej: 10:00)`
       );
 
       return;
@@ -283,7 +282,7 @@ const handleMessage = async (from, text) => {
     if (text.includes('cita') || text.includes('disponible')) {
 
       const today = new Date().toISOString().split('T')[0];
-      const fisios = await getAllFisios();
+      const users = await getAllUsers();
 
       let response = `¿Quieres reservar una cita?\n\nResponde con un día (ej: lunes, martes, etc.)`;
 
@@ -298,15 +297,15 @@ const handleMessage = async (from, text) => {
       const time = normalizeTime(text);
       const context = userContext.get(from);
 
-      if (!context?.date || !context?.fisio_id) {
-        await sendMessage(from, "❌ Primero dime un día y un fisio");
+      if (!context?.date || !context?.user_id) {
+        await sendMessage(from, "❌ Primero dime un día y un usuario");
         return;
       }
 
       const date = context.date;
-      const fisioId = context.fisio_id;
+      const userId = context.user_id;
 
-      const available = await getAvailableSlots(date, fisioId);
+      const available = await getAvailableSlots(date, userId);
       const normalized = available.map(normalizeTime);
 
       if (normalized.includes(time)) {
@@ -317,11 +316,11 @@ const handleMessage = async (from, text) => {
         const utcHours = String((hours - 2 + 24) % 24).padStart(2, '0');
         const datetime = `${date}T${utcHours}:${minutes}:00`;
 
-        await bookAppointment(from, datetime, 'physio', fisioId);
+        await bookAppointment(from, datetime, 'physio', userId);
 
         await sendMessage(
           from,
-          `✅ Cita confirmada para ${date} a las ${time} con ${context.fisioName}`
+          `✅ Cita confirmada para ${date} a las ${time} con ${context.userName}`
         );
 
         userContext.delete(from);
@@ -373,13 +372,13 @@ app.get('/api/appointments/:id', verifyToken, async (req, res) => {
 
 app.post('/api/appointments', verifyToken, async (req, res) => {
   try {
-    const { phone, datetime, service, status, notes, duration, fisio_id } = req.body;
+    const { phone, datetime, service, status, notes, duration, user_id } = req.body;
 
-    if (!phone || !datetime || !fisio_id) {
-      return res.status(400).json({ error: 'phone, datetime, and fisio_id are required' });
+    if (!phone || !datetime || !user_id) {
+      return res.status(400).json({ error: 'phone, datetime, and user_id are required' });
     }
 
-    const appointment = await bookAppointment(phone, datetime, service, fisio_id);
+    const appointment = await bookAppointment(phone, datetime, service, user_id);
     res.status(201).json(appointment);
   } catch (err) {
     console.error(err);
@@ -427,13 +426,13 @@ app.delete('/api/appointments/:id', verifyToken, async (req, res) => {
 app.get('/api/slots/:date', verifyToken, async (req, res) => {
   try {
     const { date } = req.params
-    const { fisio_id } = req.query
+    const { user_id } = req.query
 
     if (!date || date === 'undefined') {
       return res.status(400).json({ error: 'Invalid date' })
     }
 
-    const slots = await getAvailableSlots(date, fisio_id ? parseInt(fisio_id) : null)
+    const slots = await getAvailableSlots(date, user_id ? parseInt(user_id) : null)
 
     res.json({
       date,
@@ -446,33 +445,33 @@ app.get('/api/slots/:date', verifyToken, async (req, res) => {
   }
 })
 
-// ===================== FISIOS ENDPOINTS =====================
+// ===================== USERS ENDPOINTS =====================
 
-app.get('/api/fisios', verifyToken, async (_, res) => {
+app.get('/api/users', verifyToken, async (_, res) => {
   try {
-    const fisios = await getAllFisios();
-    res.json(fisios);
+    const users = await getAllUsers();
+    res.json(users);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Error fetching fisios' });
+    res.status(500).json({ error: 'Error fetching users' });
   }
 });
 
-app.get('/api/fisios/:id', verifyToken, async (req, res) => {
+app.get('/api/users/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const fisio = await getFisioById(id);
-    if (!fisio) {
-      return res.status(404).json({ error: 'Fisio not found' });
+    const user = await getUserById(id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
     }
-    res.json(fisio);
+    res.json(user);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Error fetching fisio' });
+    res.status(500).json({ error: 'Error fetching user' });
   }
 });
 
-app.post('/api/fisios', verifyToken, async (req, res) => {
+app.post('/api/users', verifyToken, async (req, res) => {
   try {
     const { name, email, phone, specialties, license } = req.body;
 
@@ -480,18 +479,18 @@ app.post('/api/fisios', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Name and email are required' });
     }
 
-    const fisio = await createFisio(name, email, phone, specialties, license);
-    res.status(201).json(fisio);
+    const user = await createUser(name, email, phone, specialties, license);
+    res.status(201).json(user);
   } catch (err) {
-    console.error('Error creating fisio:', err);
+    console.error('Error creating user:', err);
     if (err.code === '23505') { // Unique constraint violation
       return res.status(409).json({ error: 'Email already exists' });
     }
-    res.status(500).json({ error: err.message || 'Error creating fisio' });
+    res.status(500).json({ error: err.message || 'Error creating user' });
   }
 });
 
-app.put('/api/fisios/:id', verifyToken, async (req, res) => {
+app.put('/api/users/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
@@ -500,28 +499,28 @@ app.put('/api/fisios/:id', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'No updates provided' });
     }
 
-    const fisio = await updateFisio(id, updates);
-    if (!fisio) {
-      return res.status(404).json({ error: 'Fisio not found' });
+    const user = await updateUser(id, updates);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
     }
-    res.json(fisio);
+    res.json(user);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Error updating fisio' });
+    res.status(500).json({ error: 'Error updating user' });
   }
 });
 
-app.delete('/api/fisios/:id', verifyToken, async (req, res) => {
+app.delete('/api/users/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const fisio = await deleteFisio(id);
-    if (!fisio) {
-      return res.status(404).json({ error: 'Fisio not found' });
+    const user = await deleteUser(id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
     }
-    res.json({ message: 'Fisio deleted', fisio });
+    res.json({ message: 'User deleted', user });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Error deleting fisio' });
+    res.status(500).json({ error: 'Error deleting user' });
   }
 });
 
@@ -529,7 +528,7 @@ app.delete('/api/fisios/:id', verifyToken, async (req, res) => {
 
 app.get('/api/planning', verifyToken, async (req, res) => {
   try {
-    const { fisio_id, start_date, end_date } = req.query;
+    const { user_id, start_date, end_date } = req.query;
     
     // Si el usuario es adminMid, puede ver todos los plannings
     if (req.user.role === 'adminMid') {
@@ -537,12 +536,12 @@ app.get('/api/planning', verifyToken, async (req, res) => {
       return res.json(planning);
     }
 
-    // Si no es adminMid, solo puede ver el planning de un fisio específico
-    if (!fisio_id) {
-      return res.status(400).json({ error: 'fisio_id is required' });
+    // Si no es adminMid, solo puede ver el planning de un usuario específico
+    if (!user_id) {
+      return res.status(400).json({ error: 'user_id is required' });
     }
 
-    const planning = await getPlanningByFisio(fisio_id, start_date, end_date);
+    const planning = await getPlanningByUser(user_id, start_date, end_date);
     res.json(planning);
   } catch (err) {
     console.error(err);
@@ -550,17 +549,17 @@ app.get('/api/planning', verifyToken, async (req, res) => {
   }
 });
 
-app.get('/api/planning/fisio/:fisio_id', verifyToken, async (req, res) => {
+app.get('/api/planning/user/:user_id', verifyToken, async (req, res) => {
   try {
-    const { fisio_id } = req.params;
+    const { user_id } = req.params;
     const { start_date, end_date } = req.query;
 
-    // Solo adminMid o el propio fisio pueden ver el planning
-    if (req.user.role !== 'adminMid' && req.user.id !== parseInt(fisio_id)) {
+    // Solo adminMid o el propio usuario pueden ver el planning
+    if (req.user.role !== 'adminMid' && req.user.id !== parseInt(user_id)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
-    const planning = await getPlanningByFisio(fisio_id, start_date, end_date);
+    const planning = await getPlanningByUser(user_id, start_date, end_date);
     res.json(planning);
   } catch (err) {
     console.error(err);
@@ -570,10 +569,10 @@ app.get('/api/planning/fisio/:fisio_id', verifyToken, async (req, res) => {
 
 app.post('/api/planning', verifyToken, async (req, res) => {
   try {
-    const { fisio_id, date, type, notes } = req.body;
+    const { user_id, date, type, notes } = req.body;
 
-    if (!fisio_id || !date || !type) {
-      return res.status(400).json({ error: 'fisio_id, date, and type are required' });
+    if (!user_id || !date || !type) {
+      return res.status(400).json({ error: 'user_id, date, and type are required' });
     }
 
     // Solo adminMid puede crear plannings
@@ -581,7 +580,7 @@ app.post('/api/planning', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only adminMid can create planning' });
     }
 
-    const planning = await createPlanning(fisio_id, date, type, notes);
+    const planning = await createPlanning(user_id, date, type, notes);
     res.status(201).json(planning);
   } catch (err) {
     console.error(err);
