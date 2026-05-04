@@ -285,51 +285,58 @@ const getUserByUsername = async (username) => {
 // ===================== PLANNING =====================
 const getPlanningByUserAndDate = async (userId, date) => {
   const result = await pool.query(
-    `SELECT * FROM planning WHERE user_id = $1 AND date = $2`,
+    `SELECT p.*, json_build_object('id', u.id, 'name', u.name, 'email', u.email) as user 
+     FROM planning p
+     JOIN users u ON p.user_id = u.id
+     WHERE p.user_id = $1 AND p.date = $2`,
     [userId, date]
   )
   return result.rows[0] || null
 }
 
 const getPlanningByUser = async (userId, startDate = null, endDate = null) => {
-  let query = `SELECT * FROM planning WHERE user_id = $1`
+  let query = `SELECT p.*, json_build_object('id', u.id, 'name', u.name, 'email', u.email) as user FROM planning p
+               JOIN users u ON p.user_id = u.id
+               WHERE p.user_id = $1`
   const params = [userId]
   let i = 2
 
   if (startDate) {
-    query += ` AND date >= $${i}`
+    query += ` AND p.date >= $${i}`
     params.push(startDate)
     i++
   }
   if (endDate) {
-    query += ` AND date <= $${i}`
+    query += ` AND p.date <= $${i}`
     params.push(endDate)
     i++
   }
 
-  query += ` ORDER BY date ASC`
+  query += ` ORDER BY p.date ASC`
 
   const result = await pool.query(query, params)
   return result.rows
 }
 
 const getAllPlanning = async (startDate = null, endDate = null) => {
-  let query = `SELECT * FROM planning WHERE 1=1`
+  let query = `SELECT p.*, json_build_object('id', u.id, 'name', u.name, 'email', u.email) as user FROM planning p
+               JOIN users u ON p.user_id = u.id
+               WHERE 1=1`
   const params = []
   let i = 1
 
   if (startDate) {
-    query += ` AND date >= $${i}`
+    query += ` AND p.date >= $${i}`
     params.push(startDate)
     i++
   }
   if (endDate) {
-    query += ` AND date <= $${i}`
+    query += ` AND p.date <= $${i}`
     params.push(endDate)
     i++
   }
 
-  query += ` ORDER BY user_id, date ASC`
+  query += ` ORDER BY p.user_id, p.date ASC`
 
   const result = await pool.query(query, params)
   return result.rows
