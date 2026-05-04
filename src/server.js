@@ -18,6 +18,7 @@ const {
   getUserByUsername,
   getPlanningByUserAndDate,
   getPlanningByUser,
+  getAvailableUsersForDate,
   getAllPlanning,
   createPlanning,
   updatePlanning,
@@ -83,6 +84,22 @@ const dayMap = {
   sabado: 6
 };
 
+const monthMap = {
+  enero: 1,
+  febrero: 2,
+  marzo: 3,
+  abril: 4,
+  mayo: 5,
+  junio: 6,
+  julio: 7,
+  agosto: 8,
+  septiembre: 9,
+  setiembre: 9,
+  octubre: 10,
+  noviembre: 11,
+  diciembre: 12
+};
+
 // ===================== FECHAS (FIX REAL) =====================
 
 const normalizeTime = (t) => t.trim().slice(0, 5);
@@ -101,6 +118,73 @@ const getNextWeekday = (weekday) => {
   const day = String(result.getDate()).padStart(2, '0');
 
   return `${year}-${month}-${day}`;
+};
+
+const formatReadableDate = (dateStr) => {
+  const date = new Date(`${dateStr}T00:00:00`);
+  return date.toLocaleDateString('es-ES', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long'
+  });
+};
+
+const parseSpanishDate = (text) => {
+  const explicitDate = text.match(/(\b\d{1,2})\s*(?:de\s*)?([a-záéíóúñ]+)(?:\s*(?:de\s*)?\s*(\d{4}))?/i);
+  if (!explicitDate) return null;
+
+  const day = parseInt(explicitDate[1], 10);
+  const monthName = explicitDate[2].toLowerCase();
+  const yearPart = explicitDate[3];
+  const month = monthMap[monthName];
+
+  if (!month || day < 1 || day > 31) return null;
+
+  let year = yearPart ? parseInt(yearPart, 10) : new Date().getFullYear();
+  const candidate = new Date(year, month - 1, day);
+
+  if (candidate.getDate() !== day || candidate.getMonth() !== month - 1) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  candidate.setHours(0, 0, 0, 0);
+
+  if (!yearPart && candidate < today) {
+    candidate.setFullYear(year + 1);
+  }
+
+  return candidate.toISOString().split('T')[0];
+};
+
+const parseNumericDate = (text) => {
+  const numericDate = text.match(/\b(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?\b/);
+  if (!numericDate) return null;
+
+  const day = parseInt(numericDate[1], 10);
+  const month = parseInt(numericDate[2], 10);
+  let year = numericDate[3] ? parseInt(numericDate[3], 10) : new Date().getFullYear();
+
+  if (!numericDate[3] && new Date(year, month - 1, day) < new Date()) {
+    year += 1;
+  }
+
+  const candidate = new Date(year, month - 1, day);
+  if (candidate.getDate() !== day || candidate.getMonth() !== month - 1) return null;
+
+  return candidate.toISOString().split('T')[0];
+};
+
+const parseDateFromText = (text) => {
+  const explicitDate = parseSpanishDate(text) || parseNumericDate(text);
+  if (explicitDate) return explicitDate;
+
+  for (const [dayName, dayIndex] of Object.entries(dayMap)) {
+    if (text.includes(dayName)) {
+      return getNextWeekday(dayIndex);
+    }
+  }
+
+  return null;
 };
 
 // ===================== WEBHOOK =====================
@@ -211,42 +295,36 @@ app.post('/auth/login', async (req, res) => {
 
 const handleMessage = async (from, text) => {
   try {
+    const context = userContext.get(from);
+    const targetDate = parseDateFromText(text);
 
-    // ---------- DETECTAR DÍA ----------
-    for (const [dayName, dayIndex] of Object.entries(dayMap)) {
-      if (text.includes(dayName)) {
+    if (targetDate) {
+      const readable = formatReadableDate(targetDate);
+      const users = await getAvailableUsersForDate(targetDate);
 
-        const targetDate = getNextWeekday(dayIndex);
-
-        const readable = new Date(targetDate + "T00:00:00").toLocaleDateString('es-ES', {
-          weekday: 'long',
-          day: 'numeric',
-          month: 'long'
-        });
-
-        // Obtener todos los users disponibles
-        const users = await getAllUsers();
-        const userList = users.map((u, i) => `${i + 1}. ${u.name}`).join('\n');
-
-        userContext.set(from, { date: targetDate, step: 'selecting-user' });
-
-        await sendMessage(
-          from,
-          `📅 ${readable}\n\n¿Con qué fisioterapeuta deseas la sesión?\n\n${userList}\n\nResponde con el número (ej: 1)`
-        );
-
+      if (users.length === 0) {
+        await sendMessage(from, `Lo siento, no hay fisioterapeutas disponibles el ${readable}. Prueba otra fecha.`);
         return;
       }
+
+      const userList = users.map((u, i) => `${i + 1}. ${u.name}`).join('\n');
+      userContext.set(from, { date: targetDate, step: 'selecting-user', availableUsers: users });
+
+      await sendMessage(
+        from,
+        `📅 ${readable}\n\nEstos fisioterapeutas están disponibles:\n\n${userList}\n\nResponde con el número (ej: 1)`
+      );
+
+      return;
     }
 
     // ---------- SELECCIONANDO User ----------
-    const context = userContext.get(from);
     if (context?.step === 'selecting-user' && /^\d+$/.test(text)) {
-      const users = await getAllUsers();
-      const userIndex = parseInt(text) - 1;
+      const users = context.availableUsers || await getAvailableUsersForDate(context.date);
+      const userIndex = parseInt(text, 10) - 1;
 
       if (userIndex < 0 || userIndex >= users.length) {
-        await sendMessage(from, `❌ Número inválido. Intenta de nuevo.`);
+        await sendMessage(from, `❌ Número inválido. Responde con el número del fisioterapeuta que aparece en la lista.`);
         return;
       }
 
@@ -255,7 +333,7 @@ const handleMessage = async (from, text) => {
       // Validar si el usuario está disponible ese día (no de vacaciones ni de baja)
       const planning = await getPlanningByUserAndDate(selectedUser.id, context.date);
       if (planning && (planning.type === 'vacation' || planning.type === 'sick')) {
-        await sendMessage(from, `❌ ${selectedUser.name} no está disponible en ${context.date}. Elige otro día o usuario.`);
+        await sendMessage(from, `❌ ${selectedUser.name} no está disponible el ${formatReadableDate(context.date)}. Elige otro día o usuario.`);
         userContext.delete(from);
         return;
       }
@@ -265,7 +343,7 @@ const handleMessage = async (from, text) => {
       const slots = await getAvailableSlots(context.date, selectedUser.id);
 
       if (slots.length === 0) {
-        await sendMessage(from, `❌ ${selectedUser.name} no tiene disponibilidad en ${context.date}. Elige otro día.`);
+        await sendMessage(from, `❌ ${selectedUser.name} no tiene disponibilidad el ${formatReadableDate(context.date)}. Elige otro día.`);
         userContext.delete(from);
         return;
       }
@@ -280,14 +358,8 @@ const handleMessage = async (from, text) => {
 
     // ---------- COMANDO GENERAL ----------
     if (text.includes('cita') || text.includes('disponible')) {
-
-      const today = new Date().toISOString().split('T')[0];
-      const users = await getAllUsers();
-
-      let response = `¿Quieres reservar una cita?\n\nResponde con un día (ej: lunes, martes, etc.)`;
-
+      const response = `¿Quieres reservar una cita?\n\nEscribe un día o fecha, por ejemplo:\n- lunes\n- próximo miércoles\n- 22 de mayo\n- 22/05`;
       await sendMessage(from, response);
-
       return;
     }
 

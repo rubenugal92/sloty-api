@@ -77,6 +77,14 @@ const getAvailableSlots = async (date, userId = null) => {
 
   const slots = []
 
+  // Si el usuario no trabaja ese día, no hay slots disponibles.
+  if (userId) {
+    const planning = await getPlanningByUserAndDate(userId, date)
+    if (planning && planning.type !== 'work') {
+      return []
+    }
+  }
+
   // 🔥 FIX: Horarios de trabajo en UTC (09:00-20:00 España = 07:00-18:00 UTC)
   const startWork = new Date(`${date}T07:00:00`)
   const endWork = new Date(`${date}T18:00:00`)
@@ -105,6 +113,18 @@ const getAvailableSlots = async (date, userId = null) => {
   })
 
   return slots.filter(s => !booked.includes(s))
+}
+
+const getAvailableUsersForDate = async (date) => {
+  const result = await pool.query(
+    `SELECT u.* FROM users u
+     LEFT JOIN planning p ON u.id = p.user_id AND p.date = $1
+     WHERE u.is_active = true
+       AND (p.type IS NULL OR p.type = 'work')
+     ORDER BY u.name ASC`,
+    [date]
+  )
+  return result.rows
 }
 
 // ===================== CREATE =====================
@@ -391,6 +411,7 @@ module.exports = {
   getUserByUsername,
   getPlanningByUserAndDate,
   getPlanningByUser,
+  getAvailableUsersForDate,
   getAllPlanning,
   createPlanning,
   updatePlanning,
