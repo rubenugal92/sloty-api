@@ -118,9 +118,8 @@ const getAvailableSlots = async (date, userId = null) => {
 const getAvailableUsersForDate = async (date) => {
   const result = await pool.query(
     `SELECT u.* FROM users u
-     LEFT JOIN planning p ON u.id = p.user_id AND p.date = $1
-     WHERE u.is_active = true
-       AND (p.type IS NULL OR p.type = 'work')
+     INNER JOIN planning p ON u.id = p.user_id AND p.date = $1
+     WHERE u.is_active = true AND p.type = 'work'
      ORDER BY u.name ASC`,
     [date]
   )
