@@ -303,7 +303,7 @@ const handleMessage = async (from, text) => {
       const users = await getAvailableUsersForDate(targetDate);
 
       if (users.length === 0) {
-        await sendMessage(from, `Lo siento, no hay fisioterapeutas disponibles el ${readable}. Prueba otra fecha.`);
+        await sendMessage(from, `¡Vaya! Lo sentimos mucho, no hay fisioterapeutas disponibles el ${readable}. Si no le importa, mejor pruebe con otra fecha.`);
         return;
       }
 
