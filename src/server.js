@@ -312,7 +312,7 @@ const handleMessage = async (from, text) => {
 
       await sendMessage(
         from,
-        `📅 ${readable}\n\nEstos fisioterapeutas están disponibles:\n\n${userList}\n\nResponde con el número (ej: 1)`
+        `📅 ${readable}\n\nPara este día, estos son los fisioterapeutas disponibles:\n\n${userList}\n\nSelecciona cual quieres que te atienda indicando su número en el listado (ej: 1)`
       );
 
       return;
@@ -350,7 +350,7 @@ const handleMessage = async (from, text) => {
 
       await sendMessage(
         from,
-        `✅ Con ${selectedUser.name}\n\nHorarios disponibles:\n${slots.join(', ')}\n\nResponde con la hora (ej: 10:00)`
+        `✅ ¡Genial! Pues que sea con ${selectedUser.name}\n\n Sus horarios disponibles son los siguientes:\n${slots.join(', ')}\n\nResponde con la hora tal y como se muestra en el ejemplo (ejemplo: 10:00)`
       );
 
       return;
@@ -358,7 +358,7 @@ const handleMessage = async (from, text) => {
 
     // ---------- COMANDO GENERAL ----------
     if (text.includes('cita') || text.includes('disponible')) {
-      const response = `¿Quieres reservar una cita?\n\nEscribe un día o fecha, por ejemplo:\n- lunes\n- próximo miércoles\n- 22 de mayo\n- 22/05`;
+      const response = `¡Hola! Gracias por contactarnos. ¿Quieres reservar una cita?\n\nEscribe un día o fecha, por ejemplo:\n- lunes\n- próximo miércoles\n- 22 de mayo\n- 22/05 \n\nAún no soy muy inteligente, estoy aprendiendo, así que para mi correcto funcionamiento, por favor lee atentamente todo lo que te digo :) .`;
       await sendMessage(from, response);
       return;
     }
