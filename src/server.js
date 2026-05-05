@@ -359,12 +359,13 @@ const handleMessage = async (from, text) => {
     }
 
     // ---------- COMANDO GENERAL (MENSAJE INICIAL) ----------
-    if (text.includes('cita') || text.includes('disponible') || text.includes('hola') || !context) {
-      const response = `¡Hola! 👋 Bienvenido a FisioCom.\n\n¿Qué necesitas?\n\n1️⃣ Escribe "cita" para RESERVAR una cita\n2️⃣ Escribe "anular" para CANCELAR una cita existente\n\nEstamos aquí para ayudarte 😊`;
-      userContext.set(from, { step: 'choosing-action' });
-      await sendMessage(from, response);
-      return;
-    }
+if (!context) {
+  const response = `¡Hola! 👋 Bienvenido a FisioCom.\n\n¿Qué necesitas?\n\n1️⃣ Escribe "cita" para RESERVAR una cita\n2️⃣ Escribe "anular" para CANCELAR una cita existente\n\nEstamos aquí para ayudarte 😊`;
+
+  userContext.set(from, { step: 'choosing-action' });
+  await sendMessage(from, response);
+  return;
+}
 
     // ---------- ELEGIR ACCIÓN (Cita o Anular) ----------
     if (context?.step === 'choosing-action') {
