@@ -434,8 +434,11 @@ const handleMessage = async (from, text) => {
         // 🔥 FIX: Convertir a UTC restando 2 horas (CEST = UTC+2)
         // Si usuario dice 15:00 España, guardamos como 13:00 UTC en la BD
         const [hours, minutes] = time.split(':').map(Number);
+
         const utcHours = String((hours - 2 + 24) % 24).padStart(2, '0');
-        const datetime = `${date}T${utcHours}:${minutes}:00`;
+        const utcMinutes = String(minutes).padStart(2, '0');
+
+        const datetime = `${date}T${utcHours}:${utcMinutes}:00`;
 
         // Guardar la hora y cambiar a paso "asking-notes"
         userContext.set(from, { ...context, datetime, step: 'asking-notes' });
