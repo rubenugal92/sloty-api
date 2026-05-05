@@ -44,6 +44,7 @@ const pool = new Pool({
         service TEXT DEFAULT 'physio',
         status TEXT DEFAULT 'confirmed',
         notes TEXT,
+        custom_id TEXT UNIQUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -137,11 +138,19 @@ const bookAppointment = async (phone, datetime, service = 'physio', userId = nul
     throw new Error('Slot ocupado')
   }
 
+  // Generar custom_id: phone + datetime + random
+  // Formato: "34612345678-20240515-1500-abc123"
+  const dateObj = new Date(datetime)
+  const dateStr = dateObj.toISOString().split('T')[0].replace(/-/g, '') // YYYYMMDD
+  const timeStr = dateObj.toISOString().split('T')[1].slice(0, 5).replace(':', '') // HHMM
+  const randomId = Math.random().toString(36).substring(2, 8).toUpperCase()
+  const custom_id = `${phone}-${dateStr}-${timeStr}-${randomId}`
+
   const result = await pool.query(
-    `INSERT INTO appointments (phone, datetime, service, user_id, notes)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO appointments (phone, datetime, service, user_id, notes, custom_id)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [phone, datetime, service, userId, notes]
+    [phone, datetime, service, userId, notes, custom_id]
   )
 
   return result.rows[0]
@@ -194,6 +203,24 @@ const deleteAppointment = async (id) => {
   const result = await pool.query(
     `DELETE FROM appointments WHERE id = $1 RETURNING *`,
     [id]
+  )
+  return result.rows[0]
+}
+
+const getAppointmentByCustomId = async (custom_id) => {
+  const result = await pool.query(
+    `SELECT * FROM appointments WHERE custom_id = $1 AND status != 'cancelled'`,
+    [custom_id]
+  )
+  return result.rows[0]
+}
+
+const cancelAppointmentByCustomId = async (custom_id) => {
+  const result = await pool.query(
+    `UPDATE appointments SET status = 'cancelled', updated_at = NOW() 
+     WHERE custom_id = $1 AND status != 'cancelled'
+     RETURNING *`,
+    [custom_id]
   )
   return result.rows[0]
 }
@@ -408,6 +435,8 @@ module.exports = {
   getAppointmentById,
   updateAppointment,
   deleteAppointment,
+  getAppointmentByCustomId,
+  cancelAppointmentByCustomId,
   getAllUsers,
   getUserById,
   createUser,

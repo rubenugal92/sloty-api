@@ -9,6 +9,8 @@ const {
   getAppointmentById,
   updateAppointment,
   deleteAppointment,
+  getAppointmentByCustomId,
+  cancelAppointmentByCustomId,
   getAllUsers,
   getUserById,
   createUser,
@@ -296,9 +298,9 @@ app.post('/auth/login', async (req, res) => {
 const handleMessage = async (from, text) => {
   try {
     const context = userContext.get(from);
-    const targetDate = parseDateFromText(text);
+    const targetDate = context?.step === 'awaiting-date' ? parseDateFromText(text) : parseDateFromText(text);
 
-    if (targetDate) {
+    if (targetDate && (context?.step === 'awaiting-date' || !context)) {
       const readable = formatReadableDate(targetDate);
       const users = await getAvailableUsersForDate(targetDate);
 
@@ -356,10 +358,57 @@ const handleMessage = async (from, text) => {
       return;
     }
 
-    // ---------- COMANDO GENERAL ----------
-    if (text.includes('cita') || text.includes('disponible')) {
-      const response = `¡Hola! Gracias por contactarnos. ¿Quieres reservar una cita?\n\nEscribe un día o fecha, por ejemplo:\n- lunes\n- próximo miércoles\n- 22 de mayo\n- 22/05 \n\nAún no soy muy inteligente, estoy aprendiendo, así que para mi correcto funcionamiento, por favor lee atentamente todo lo que te digo :) .`;
+    // ---------- COMANDO GENERAL (MENSAJE INICIAL) ----------
+    if (text.includes('cita') || text.includes('disponible') || text.includes('hola') || !context) {
+      const response = `¡Hola! 👋 Bienvenido a FisioCom.\n\n¿Qué necesitas?\n\n1️⃣ Escriba "cita" para RESERVAR una cita\n2️⃣ Escriba "anular" para CANCELAR una cita existente\n\nEstamos aquí para ayudarte 😊`;
+      userContext.set(from, { step: 'choosing-action' });
       await sendMessage(from, response);
+      return;
+    }
+
+    // ---------- ELEGIR ACCIÓN (Cita o Anular) ----------
+    if (context?.step === 'choosing-action') {
+      const lowerText = text.toLowerCase();
+      
+      if (lowerText.includes('cita') || lowerText.includes('reserv')) {
+        // Flujo de NUEVA CITA
+        userContext.set(from, { step: 'awaiting-date' });
+        await sendMessage(from, `✅ Perfecto. Vamos a reservar tu cita.\n\n¿Para qué día la necesitas? Escribe:\n- lunes\n- próximo miércoles\n- 22 de mayo\n- 22/05`);
+        return;
+      }
+      
+      if (lowerText.includes('anular') || lowerText.includes('cancelar') || lowerText.includes('eliminar')) {
+        // Flujo de ANULAR CITA
+        userContext.set(from, { step: 'asking-cancel-id' });
+        await sendMessage(from, `❌ Vamos a anular tu cita.\n\n¿Cuál es el ID de tu cita? (Te lo proporcionamos cuando la reservaste, formato: 34612345678-20240515-1500-ABC123)`);
+        return;
+      }
+      
+      await sendMessage(from, `❌ No entiendo. Por favor escribe "cita" para reservar o "anular" para cancelar.`);
+      return;
+    }
+
+    // ---------- PEDIR ID PARA ANULAR ----------
+    if (context?.step === 'asking-cancel-id') {
+      const customId = text.trim().toUpperCase();
+      
+      try {
+        const appointment = await getAppointmentByCustomId(customId);
+        
+        if (!appointment) {
+          await sendMessage(from, `❌ No encontramos una cita con ese ID. Verifica que sea correcto e intenta de nuevo.`);
+          return;
+        }
+        
+        // Confirmar cancelación
+        await cancelAppointmentByCustomId(customId);
+        await sendMessage(from, `✅ ¡Cita cancelada correctamente!\n\nTu cita del ${appointment.datetime.split('T')[0]} a las ${appointment.datetime.split('T')[1].slice(0, 5)} ha sido anulada.`);
+        userContext.delete(from);
+      } catch (error) {
+        console.error('Error cancelando cita:', error);
+        await sendMessage(from, `❌ Error al cancelar la cita. Intenta de nuevo.`);
+        userContext.delete(from);
+      }
       return;
     }
 
@@ -410,11 +459,14 @@ const handleMessage = async (from, text) => {
 
       try {
         // Guardar la cita con las notas
-        await bookAppointment(from, datetime, 'physio', userId, notes);
+        const appointment = await bookAppointment(from, datetime, 'physio', userId, notes);
+
+        const customId = appointment.custom_id;
+        const appointmentTime = datetime.split('T')[1].slice(0, 5);
 
         await sendMessage(
           from,
-          `✅ ¡Cita confirmada!\n\n📋 Resumen:\n- Fecha y hora: ${context.date} a las ${datetime.split('T')[1].slice(0, 5)}\n- Fisioterapeuta: ${context.userName}\n- Dolencia: ${notes}\n\n¡Nos vemos pronto!`
+          `✅ ¡Cita confirmada!\n\n📋 Resumen:\n- Fecha y hora: ${context.date} a las ${appointmentTime}\n- Fisioterapeuta: ${context.userName}\n- Dolencia: ${notes}\n\n🔑 ID de tu cita: ${customId}\n\n⚠️ IMPORTANTE: Guarda este ID para poder anular la cita si lo necesitas. ¡Nos vemos pronto!`
         );
 
         userContext.delete(from);
@@ -427,34 +479,10 @@ const handleMessage = async (from, text) => {
       return;
     }
 
-    // ---------- CANCELAR CITA ----------
-    if (text.toLowerCase().includes('cancelar') || text.toLowerCase().includes('anular') || text.toLowerCase().includes('eliminar cita')) {
-      await sendMessage(
-        from,
-        `Para cancelar una cita, por favor indica el número de cita o la fecha (ej: cita 123 o 22 de mayo). Aún estoy aprendiendo, así que necesito ser específico.`
-      );
-      return;
-    }
-
-    // Manejar cancelación específica (si menciona "cita" + número)
-    const cancelMatch = text.match(/cita\s*(\d+)/i) || text.match(/^(\d+)$/);
-    if (cancelMatch && context?.lastAction === 'asking-cancel-id') {
-      const appointmentId = parseInt(cancelMatch[1], 10);
-      try {
-        await deleteAppointment(appointmentId);
-        await sendMessage(from, `✅ Cita ${appointmentId} cancelada.`);
-        userContext.delete(from);
-      } catch (error) {
-        console.error('Error al cancelar cita:', error);
-        await sendMessage(from, `❌ Error al cancelar la cita.`);
-      }
-      return;
-    }
-
     // ---------- DEFAULT ----------
     await sendMessage(
       from,
-      `👋 Escribe un día (ej: lunes) o "cita"`
+      `👋 No entiendo esa opción. Escribe "cita" para reservar o "anular" para cancelar.`
     );
 
   } catch (err) {
