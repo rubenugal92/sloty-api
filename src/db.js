@@ -140,7 +140,9 @@ const bookAppointment = async (phone, datetime, service = 'physio', userId = nul
 
   // Generar custom_id: phone + datetime + random
   // Formato: "34612345678-20240515-1500-abc123"
+  console.log('datetime recibido:', datetime)
   const dateObj = new Date(datetime)
+  console.log('dateObj:', dateObj)
   const dateStr = dateObj.toISOString().split('T')[0].replace(/-/g, '') // YYYYMMDD
   const timeStr = dateObj.toISOString().split('T')[1].slice(0, 5).replace(':', '') // HHMM
   const randomId = Math.random().toString(36).substring(2, 8).toUpperCase()
