@@ -352,7 +352,7 @@ const handleMessage = async (from, text) => {
 
       await sendMessage(
         from,
-        `✅ ¡Genial! Pues que sea con ${selectedUser.name}\n\n Sus horarios disponibles son los siguientes:\n${slots.join(', ')}\n\nResponde con la hora tal y como se muestra en el ejemplo (ejemplo: 10:00)`
+        `✅ ¡Genial! Pues que sea con ${selectedUser.name}\n\n Sus horarios disponibles son los siguientes:\n${slots.join(', ')}\n\nResponde con la hora tal y como se muestra en el ejemplo (ejemplo: 09:00)`
       );
 
       return;
@@ -377,7 +377,7 @@ if (!context || !context.step) {
       if (lowerText.includes('cita') || lowerText.includes('reserv')) {
         // Flujo de NUEVA CITA
         userContext.set(from, { step: 'awaiting-date' });
-        await sendMessage(from, `✅ Perfecto. Vamos a reservar tu cita.\n\n¿Para qué día la necesitas? Escribe:\n- lunes\n- próximo miércoles\n- 22 de mayo\n- 22/05`);
+        await sendMessage(from, `✅ Perfecto. Vamos a reservar tu cita.\n\n¿Para qué día la necesitas? Escribe algo como los ejemplos que te pongo a continuación:\n- lunes\n- próximo miércoles\n- 22 de mayo\n- 22/05`);
         return;
       }
       
