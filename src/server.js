@@ -360,7 +360,7 @@ const handleMessage = async (from, text) => {
 
     // ---------- COMANDO GENERAL (MENSAJE INICIAL) ----------
     if (text.includes('cita') || text.includes('disponible') || text.includes('hola') || !context) {
-      const response = `¡Hola! 👋 Bienvenido a FisioCom.\n\n¿Qué necesitas?\n\n1️⃣ Escriba "cita" para RESERVAR una cita\n2️⃣ Escriba "anular" para CANCELAR una cita existente\n\nEstamos aquí para ayudarte 😊`;
+      const response = `¡Hola! 👋 Bienvenido a FisioCom.\n\n¿Qué necesitas?\n\n1️⃣ Escribe "cita" para RESERVAR una cita\n2️⃣ Escribe "anular" para CANCELAR una cita existente\n\nEstamos aquí para ayudarte 😊`;
       userContext.set(from, { step: 'choosing-action' });
       await sendMessage(from, response);
       return;
@@ -380,7 +380,7 @@ const handleMessage = async (from, text) => {
       if (lowerText.includes('anular') || lowerText.includes('cancelar') || lowerText.includes('eliminar')) {
         // Flujo de ANULAR CITA
         userContext.set(from, { step: 'asking-cancel-id' });
-        await sendMessage(from, `❌ Vamos a anular tu cita.\n\n¿Cuál es el ID de tu cita? (Te lo proporcionamos cuando la reservaste, formato: 34612345678-20240515-1500-ABC123)`);
+        await sendMessage(from, `Genial, pues vamos a proceder.\n\n¿Cuál es el número de tu cita? (Te lo proporcionamos cuando la reservaste, formato: 34612345678-20240515-1500-ABC123)`);
         return;
       }
       
@@ -396,13 +396,13 @@ const handleMessage = async (from, text) => {
         const appointment = await getAppointmentByCustomId(customId);
         
         if (!appointment) {
-          await sendMessage(from, `❌ No encontramos una cita con ese ID. Verifica que sea correcto e intenta de nuevo.`);
+          await sendMessage(from, `❌ No encontramos una cita con ese número. Verifica que sea correcto e intenta de nuevo.`);
           return;
         }
         
         // Confirmar cancelación
         await cancelAppointmentByCustomId(customId);
-        await sendMessage(from, `✅ ¡Cita cancelada correctamente!\n\nTu cita del ${appointment.datetime.split('T')[0]} a las ${appointment.datetime.split('T')[1].slice(0, 5)} ha sido anulada.`);
+        await sendMessage(from, `✅ ¡Cita ${customId} cancelada correctamente!`);
         userContext.delete(from);
       } catch (error) {
         console.error('Error cancelando cita:', error);
@@ -445,7 +445,7 @@ const handleMessage = async (from, text) => {
 
         await sendMessage(
           from,
-          `✅ Perfecto! Cita para ${date} a las ${time} con ${context.userName}\n\n¿Cuál es tu problema o dolencia? Describe brevemente qué necesitas que tratemos (por ejemplo: dolor de espalda, lesión de rodilla, etc)`
+          `✅ Perfecto! Pues crearemos tu cita para el ${date} a las ${time} con ${context.userName}\n\n¿Cuál es tu problema o dolencia? Describe brevemente qué necesitas que tratemos (por ejemplo: dolor de espalda, lesión de rodilla, etc)`
         );
 
       } else {
@@ -469,7 +469,7 @@ const handleMessage = async (from, text) => {
 
         await sendMessage(
           from,
-          `✅ ¡Cita confirmada!\n\n📋 Resumen:\n- Fecha y hora: ${context.date} a las ${appointmentTime}\n- Fisioterapeuta: ${context.userName}\n- Dolencia: ${notes}\n\n🔑 ID de tu cita: ${customId}\n\n⚠️ IMPORTANTE: Guarda este ID para poder anular la cita si lo necesitas. ¡Nos vemos pronto!`
+          `✅ ¡Cita confirmada!\n\n📋 Resumen:\n- Fecha y hora: ${context.date} a las ${appointmentTime}\n- Fisioterapeuta: ${context.userName}\n- Problema/Dolencia: ${notes}\n\n🔑 Número de tu cita: ${customId}\n\n⚠️ IMPORTANTE: Guarda este ID para poder anular la cita si lo necesitas. ¡Nos vemos pronto!`
         );
 
         userContext.delete(from);
