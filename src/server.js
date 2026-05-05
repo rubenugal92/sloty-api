@@ -660,6 +660,54 @@ app.post('/api/planning', verifyToken, async (req, res) => {
   }
 });
 
+// ===================== PLANNING BULK (RANGO DE FECHAS) =====================
+app.post('/api/planning/bulk', verifyToken, async (req, res) => {
+  try {
+    const { user_id, start_date, end_date, type, notes, include_weekends } = req.body;
+
+    if (!user_id || !start_date || !end_date || !type) {
+      return res.status(400).json({ error: 'user_id, start_date, end_date, and type are required' });
+    }
+
+    // Solo admin puede crear plannings
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admin can create planning' });
+    }
+
+    // Generar todas las fechas en el rango
+    const start = new Date(start_date);
+    const end = new Date(end_date);
+    const dates = [];
+
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      // Si include_weekends es false, saltar fines de semana (sábado=6, domingo=0)
+      if (!include_weekends && (d.getDay() === 0 || d.getDay() === 6)) {
+        continue;
+      }
+      
+      // Convertir a formato YYYY-MM-DD
+      const dateStr = d.toLocaleDateString('en-CA');
+      dates.push(dateStr);
+    }
+
+    // Crear planning para cada fecha
+    const createdPlannings = [];
+    for (const date of dates) {
+      const planning = await createPlanning(user_id, date, type, notes);
+      createdPlannings.push(planning);
+    }
+
+    res.status(201).json({
+      message: `Created ${createdPlannings.length} planning entries`,
+      count: createdPlannings.length,
+      plannings: createdPlannings
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error creating planning bulk' });
+  }
+});
+
 app.put('/api/planning/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
