@@ -127,7 +127,7 @@ const getAvailableUsersForDate = async (date) => {
 }
 
 // ===================== CREATE =====================
-const bookAppointment = async (phone, datetime, service = 'physio', userId = null) => {
+const bookAppointment = async (phone, datetime, service = 'physio', userId = null, notes = null) => {
   const check = await pool.query(
     `SELECT id FROM appointments WHERE datetime = $1 AND user_id = $2 AND status != 'cancelled'`,
     [datetime, userId]
@@ -138,10 +138,10 @@ const bookAppointment = async (phone, datetime, service = 'physio', userId = nul
   }
 
   const result = await pool.query(
-    `INSERT INTO appointments (phone, datetime, service, user_id)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO appointments (phone, datetime, service, user_id, notes)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
-    [phone, datetime, service, userId]
+    [phone, datetime, service, userId, notes]
   )
 
   return result.rows[0]

@@ -388,19 +388,66 @@ const handleMessage = async (from, text) => {
         const utcHours = String((hours - 2 + 24) % 24).padStart(2, '0');
         const datetime = `${date}T${utcHours}:${minutes}:00`;
 
-        await bookAppointment(from, datetime, 'physio', userId);
+        // Guardar la hora y cambiar a paso "asking-notes"
+        userContext.set(from, { ...context, datetime, step: 'asking-notes' });
 
         await sendMessage(
           from,
-          `✅ Cita confirmada para ${date} a las ${time} con ${context.userName}`
+          `✅ Perfecto! Cita para ${date} a las ${time} con ${context.userName}\n\n¿Cuál es tu problema o dolencia? Describe brevemente qué necesitas que tratemos (por ejemplo: dolor de espalda, lesión de rodilla, etc)`
         );
-
-        userContext.delete(from);
 
       } else {
         await sendMessage(from, `❌ Hora no disponible`);
       }
 
+      return;
+    }
+
+    // ---------- PIDIENDO NOTAS ----------
+    if (context?.step === 'asking-notes') {
+      const notes = text;
+      const { datetime, user_id: userId } = context;
+
+      try {
+        // Guardar la cita con las notas
+        await bookAppointment(from, datetime, 'physio', userId, notes);
+
+        await sendMessage(
+          from,
+          `✅ ¡Cita confirmada!\n\n📋 Resumen:\n- Fecha y hora: ${context.date} a las ${datetime.split('T')[1].slice(0, 5)}\n- Fisioterapeuta: ${context.userName}\n- Dolencia: ${notes}\n\n¡Nos vemos pronto!`
+        );
+
+        userContext.delete(from);
+      } catch (error) {
+        console.error('Error al guardar cita con notas:', error);
+        await sendMessage(from, '❌ Error al confirmar la cita. Intenta de nuevo.');
+        userContext.delete(from);
+      }
+
+      return;
+    }
+
+    // ---------- CANCELAR CITA ----------
+    if (text.toLowerCase().includes('cancelar') || text.toLowerCase().includes('anular') || text.toLowerCase().includes('eliminar cita')) {
+      await sendMessage(
+        from,
+        `Para cancelar una cita, por favor indica el número de cita o la fecha (ej: cita 123 o 22 de mayo). Aún estoy aprendiendo, así que necesito ser específico.`
+      );
+      return;
+    }
+
+    // Manejar cancelación específica (si menciona "cita" + número)
+    const cancelMatch = text.match(/cita\s*(\d+)/i) || text.match(/^(\d+)$/);
+    if (cancelMatch && context?.lastAction === 'asking-cancel-id') {
+      const appointmentId = parseInt(cancelMatch[1], 10);
+      try {
+        await deleteAppointment(appointmentId);
+        await sendMessage(from, `✅ Cita ${appointmentId} cancelada.`);
+        userContext.delete(from);
+      } catch (error) {
+        console.error('Error al cancelar cita:', error);
+        await sendMessage(from, `❌ Error al cancelar la cita.`);
+      }
       return;
     }
 
