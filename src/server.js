@@ -497,7 +497,7 @@ app.post('/api/appointments', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'phone, datetime, and user_id are required' });
     }
 
-    const appointment = await bookAppointment(phone, datetime, service, user_id);
+    const appointment = await bookAppointment(phone, datetime, service, user_id, notes);
     res.status(201).json(appointment);
   } catch (err) {
     console.error(err);
