@@ -25,7 +25,12 @@ const {
   createPlanning,
   updatePlanning,
   deletePlanning,
-  deletePlanningByUserAndDate
+  deletePlanningByUserAndDate,
+  createCompany,
+  getAllCompanies,
+  getCompanyById,
+  getCompanyByCode,
+  updateCompany
 } = require('./db');
 
 const { sendMessage } = require('./whatsapp');
@@ -281,12 +286,23 @@ app.post('/auth/login', async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, username: user.username, role: user.role },
+      { id: user.id, email: user.email, username: user.username, role: user.role, company_id: user.company_id },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
 
-    res.json({ message: 'Login successful', token, user: { id: user.id, email: user.email, username: user.username, name: user.name, role: user.role } });
+    res.json({ 
+      message: 'Login successful', 
+      token, 
+      user: { 
+        id: user.id, 
+        email: user.email, 
+        username: user.username, 
+        name: user.name, 
+        role: user.role,
+        company_id: user.company_id
+      } 
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error logging in' });
@@ -298,7 +314,7 @@ app.post('/auth/login', async (req, res) => {
 const handleMessage = async (from, text) => {
   try {
     const context = userContext.get(from);
-    const targetDate = context?.step === 'awaiting-date' ? parseDateFromText(text) : parseDateFromText(text);
+    const targetDate = parseDateFromText(text);
 
     if (targetDate && (context?.step === 'awaiting-date' || !context)) {
       const readable = formatReadableDate(targetDate);
@@ -360,16 +376,34 @@ const handleMessage = async (from, text) => {
 
     // ---------- COMANDO GENERAL (MENSAJE INICIAL) ----------
 if (!context || !context.step) {
+
+  if (text.includes('cita') || text.includes('reserv')) {
+    userContext.set(from, { step: 'awaiting-date' });
+
+    await sendMessage(from, `✅ Perfecto. ¿Para qué día la necesitas?`);
+    return;
+  }
+
+  if (
+    text.includes('anular') ||
+    text.includes('cancelar') ||
+    text.includes('eliminar')
+  ) {
+    userContext.set(from, { step: 'asking-cancel-id' });
+
+    await sendMessage(from, `¿Cuál es el número de tu cita?`);
+    return;
+  }
+
   userContext.set(from, { step: 'choosing-action' });
 
   await sendMessage(
     from,
-    `¡Hola! 👋 Bienvenido a FisioCom.\n\n¿Qué necesitas?\n\n1️⃣ Escribe "cita" para RESERVAR una cita\n2️⃣ Escribe "anular" para CANCELAR una cita existente`
+    `¡Hola! 👋\n\nEscribe "cita" para reservar o "anular" para cancelar.`
   );
 
   return;
 }
-
     // ---------- ELEGIR ACCIÓN (Cita o Anular) ----------
     if (context?.step === 'choosing-action') {
       const lowerText = text.toLowerCase();
@@ -837,6 +871,88 @@ app.delete('/api/planning/:id', verifyToken, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error deleting planning' });
+  }
+});
+
+// ===================== MIDDLEWARE SUPERADMIN =====================
+const verifySuperAdmin = (req, res, next) => {
+  if (req.user?.role !== 'superadmin') {
+    return res.status(403).json({ error: 'Only superadmin can access this resource' });
+  }
+  next();
+};
+
+// ===================== COMPANIES ENDPOINTS (SUPERADMIN ONLY) =====================
+
+// Listar todas las empresas
+app.get('/api/companies', verifyToken, verifySuperAdmin, async (req, res) => {
+  try {
+    const companies = await getAllCompanies();
+    res.json(companies);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error fetching companies' });
+  }
+});
+
+// Crear nueva empresa
+app.post('/api/companies', verifyToken, verifySuperAdmin, async (req, res) => {
+  try {
+    const { name, company_code, contact_email, phone } = req.body;
+
+    if (!name || !company_code) {
+      return res.status(400).json({ error: 'Name and company_code are required' });
+    }
+
+    const existingCompany = await getCompanyByCode(company_code);
+    if (existingCompany) {
+      return res.status(409).json({ error: 'Company code already exists' });
+    }
+
+    const company = await createCompany(name, company_code, contact_email, phone);
+    res.status(201).json({ message: 'Company created successfully', company });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error creating company' });
+  }
+});
+
+// Obtener empresa por ID
+app.get('/api/companies/:id', verifyToken, verifySuperAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const company = await getCompanyById(id);
+    
+    if (!company) {
+      return res.status(404).json({ error: 'Company not found' });
+    }
+    
+    res.json(company);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error fetching company' });
+  }
+});
+
+// Actualizar empresa
+app.put('/api/companies/:id', verifyToken, verifySuperAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No updates provided' });
+    }
+
+    const company = await updateCompany(id, updates);
+    if (!company) {
+      return res.status(404).json({ error: 'Company not found' });
+    }
+
+    res.json(company);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error updating company' });
   }
 });
 

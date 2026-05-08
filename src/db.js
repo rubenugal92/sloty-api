@@ -12,10 +12,25 @@ const pool = new Pool({
 (async () => {
   const client = await pool.connect()
   try {
+    // Tabla de empresas (VADA)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS companies (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        company_code TEXT UNIQUE NOT NULL,
+        contact_email TEXT,
+        phone TEXT,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
     // Tabla unificada de usuarios (reemplaza usuarios + users)
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
+        company_id INTEGER REFERENCES companies(id),
         username TEXT UNIQUE,
         email TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
@@ -33,10 +48,11 @@ const pool = new Pool({
     // LEGACY: Tabla users ya no se usa (ahora todos son users con type='fisio')
     // Se mantiene solo para backward compatibility
 
-    // Tabla de citas (con user_id)
+    // Tabla de citas (con user_id y company_id)
     await client.query(`
       CREATE TABLE IF NOT EXISTS appointments (
         id SERIAL PRIMARY KEY,
+        company_id INTEGER REFERENCES companies(id),
         phone TEXT NOT NULL,
         datetime TIMESTAMP NOT NULL,
         user_id INTEGER REFERENCES users(id),
@@ -51,10 +67,11 @@ const pool = new Pool({
     `)
 
 
-    // Tabla de plannings de usuarios
+    // Tabla de plannings de usuarios (con company_id)
     await client.query(`
       CREATE TABLE IF NOT EXISTS planning (
         id SERIAL PRIMARY KEY,
+        company_id INTEGER REFERENCES companies(id),
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         date DATE NOT NULL,
         type TEXT NOT NULL CHECK (type IN ('work', 'vacation', 'sick')),
@@ -243,12 +260,12 @@ const getUserById = async (id) => {
   return result.rows[0] || null
 }
 
-const createUser = async (username,name, email, password, phone = null, type = null, specialties = null) => {
+const createUser = async (username, name, email, password, phone = null, type = null, specialties = null, company_id = null) => {
   const result = await pool.query(
-    `INSERT INTO users (username, name, email, password, phone, type, specialties)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO users (company_id, username, name, email, password, phone, type, specialties)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
-    [username, name, email, password, phone, type, specialties]
+    [company_id, username, name, email, password, phone, type, specialties]
   )
   return result.rows[0]
 }
@@ -429,6 +446,71 @@ const deletePlanningByUserAndDate = async (userId, date) => {
   return result.rows[0]
 }
 
+// ===================== COMPANIES =====================
+const createCompany = async (name, company_code, contact_email = null, phone = null) => {
+  const result = await pool.query(
+    `INSERT INTO companies (name, company_code, contact_email, phone)
+     VALUES ($1, $2, $3, $4)
+     RETURNING *`,
+    [name, company_code, contact_email, phone]
+  )
+  return result.rows[0]
+}
+
+const getAllCompanies = async () => {
+  const result = await pool.query(
+    `SELECT * FROM companies WHERE is_active = true ORDER BY name ASC`
+  )
+  return result.rows
+}
+
+const getCompanyById = async (id) => {
+  const result = await pool.query(
+    `SELECT * FROM companies WHERE id = $1 AND is_active = true`,
+    [id]
+  )
+  return result.rows[0]
+}
+
+const getCompanyByCode = async (company_code) => {
+  const result = await pool.query(
+    `SELECT * FROM companies WHERE company_code = $1 AND is_active = true`,
+    [company_code]
+  )
+  return result.rows[0]
+}
+
+const updateCompany = async (id, updates) => {
+  const fields = []
+  const values = []
+  let i = 1
+
+  for (const [k, v] of Object.entries(updates)) {
+    if (['name', 'contact_email', 'phone', 'is_active'].includes(k)) {
+      fields.push(`${k} = $${i}`)
+      values.push(v)
+      i++
+    }
+  }
+
+  if (fields.length === 0) return null
+
+  fields.push(`updated_at = $${i}`)
+  values.push(new Date())
+  i++
+
+  values.push(id)
+
+  const result = await pool.query(
+    `UPDATE companies SET ${fields.join(', ')}
+     WHERE id = $${i}
+     RETURNING *`,
+    values
+  )
+
+  return result.rows[0]
+}
+
 module.exports = {
   pool,
   getAvailableSlots,
@@ -453,5 +535,10 @@ module.exports = {
   createPlanning,
   updatePlanning,
   deletePlanning,
-  deletePlanningByUserAndDate
+  deletePlanningByUserAndDate,
+  createCompany,
+  getAllCompanies,
+  getCompanyById,
+  getCompanyByCode,
+  updateCompany
 }
