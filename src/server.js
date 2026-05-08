@@ -647,10 +647,15 @@ app.post('/api/users', verifyToken, async (req, res) => {
 app.put('/api/users/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body;
+    let updates = req.body;
 
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: 'No updates provided' });
+    }
+
+    // Si viene una password nueva, encriptarla
+    if (updates.password) {
+      updates.password = await bcrypt.hash(updates.password, 10);
     }
 
     const user = await updateUser(id, updates);

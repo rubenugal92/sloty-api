@@ -259,7 +259,7 @@ const updateUser = async (id, updates) => {
   let i = 1
 
   for (const [k, v] of Object.entries(updates)) {
-    if (['username', 'name', 'email', 'phone', 'type', 'specialties', 'is_active'].includes(k)) {
+    if (['username', 'name', 'email', 'password', 'phone', 'type', 'specialties', 'is_active'].includes(k)) {
       fields.push(`${k} = $${i}`)
       values.push(v)
       i++
