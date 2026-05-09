@@ -245,10 +245,20 @@ app.post('/webhook', async (req, res) => {
 // Registro
 app.post('/auth/register', async (req, res) => {
   try {
-    const { username, name, email, password, specialities, phone, type } = req.body;
+    const { username, name, email, password, specialities, phone, type, company_code } = req.body;
 
     if (!username || !email || !password) {
-      return res.status(400).json({ error: 'Missing required fields' });
+      return res.status(400).json({ error: 'Missing required fields: username, email, password' });
+    }
+
+    // Si se proporciona company_code, usarlo; de lo contrario usar compañía por defecto
+    let company_id = null;
+    if (company_code) {
+      const company = await getCompanyByCode(company_code);
+      if (!company) {
+        return res.status(404).json({ error: 'Company code not found' });
+      }
+      company_id = company.id;
     }
 
     const existingUser = await getUserByEmail(email);
@@ -257,9 +267,9 @@ app.post('/auth/register', async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await createUser(username, name, email, hashedPassword, specialities, phone, type);
+    const user = await createUser(username, name, email, hashedPassword, phone, type, specialities, company_id);
 
-    res.status(201).json({ message: 'User registered successfully', user });
+    res.status(201).json({ message: 'User registered successfully', user: { id: user.id, email: user.email, username: user.username, company_id: user.company_id } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error registering user' });
@@ -311,14 +321,17 @@ app.post('/auth/login', async (req, res) => {
 
 // ===================== LOGICA =====================
 
-const handleMessage = async (from, text) => {
+// Company ID por defecto para reservas de WhatsApp (cuando no se especifica)
+const DEFAULT_WHATSAPP_COMPANY_ID = parseInt(process.env.DEFAULT_WHATSAPP_COMPANY_ID || '1');
+
+const handleMessage = async (from, text, company_id = DEFAULT_WHATSAPP_COMPANY_ID) => {
   try {
     const context = userContext.get(from);
     const targetDate = parseDateFromText(text);
 
     if (targetDate && (context?.step === 'awaiting-date' || !context)) {
       const readable = formatReadableDate(targetDate);
-      const users = await getAvailableUsersForDate(targetDate);
+      const users = await getAvailableUsersForDate(targetDate, company_id);
 
       if (users.length === 0) {
         await sendMessage(from, `¡Vaya! Lo sentimos mucho, no hay fisioterapeutas disponibles el ${readable}. Si no le importa, mejor pruebe con otra fecha.`);
@@ -326,7 +339,7 @@ const handleMessage = async (from, text) => {
       }
 
       const userList = users.map((u, i) => `${i + 1}. ${u.name}`).join('\n');
-      userContext.set(from, { date: targetDate, step: 'selecting-user', availableUsers: users });
+      userContext.set(from, { date: targetDate, step: 'selecting-user', availableUsers: users, company_id });
 
       await sendMessage(
         from,
@@ -338,7 +351,7 @@ const handleMessage = async (from, text) => {
 
     // ---------- SELECCIONANDO User ----------
     if (context?.step === 'selecting-user' && /^\d+$/.test(text)) {
-      const users = context.availableUsers || await getAvailableUsersForDate(context.date);
+      const users = context.availableUsers || await getAvailableUsersForDate(context.date, context.company_id || company_id);
       const userIndex = parseInt(text, 10) - 1;
 
       if (userIndex < 0 || userIndex >= users.length) {
@@ -349,14 +362,14 @@ const handleMessage = async (from, text) => {
       const selectedUser = users[userIndex];
 
       // Validar si el usuario está disponible ese día (no de vacaciones ni de baja)
-      const planning = await getPlanningByUserAndDate(selectedUser.id, context.date);
+      const planning = await getPlanningByUserAndDate(selectedUser.id, context.date, context.company_id || company_id);
       if (planning && (planning.type === 'vacation' || planning.type === 'sick')) {
         await sendMessage(from, `❌ ${selectedUser.name} no está disponible el ${formatReadableDate(context.date)}. Elige otro día o usuario.`);
         userContext.delete(from);
         return;
       }
 
-      userContext.set(from, { ...context, user_id: selectedUser.id, userName: selectedUser.name, step: 'selecting-time' });
+      userContext.set(from, { ...context, user_id: selectedUser.id, userName: selectedUser.name, step: 'selecting-time', company_id: context.company_id || company_id });
 
       const slots = await getAvailableSlots(context.date, selectedUser.id);
 
@@ -378,7 +391,7 @@ const handleMessage = async (from, text) => {
 if (!context || !context.step) {
 
   if (text.includes('cita') || text.includes('reserv')) {
-    userContext.set(from, { step: 'awaiting-date' });
+    userContext.set(from, { step: 'awaiting-date', company_id });
 
     await sendMessage(from, `✅ Perfecto. ¿Para qué día la necesitas?`);
     return;
@@ -389,13 +402,13 @@ if (!context || !context.step) {
     text.includes('cancelar') ||
     text.includes('eliminar')
   ) {
-    userContext.set(from, { step: 'asking-cancel-id' });
+    userContext.set(from, { step: 'asking-cancel-id', company_id });
 
     await sendMessage(from, `¿Cuál es el número de tu cita?`);
     return;
   }
 
-  userContext.set(from, { step: 'choosing-action' });
+  userContext.set(from, { step: 'choosing-action', company_id });
 
   await sendMessage(
     from,
@@ -431,15 +444,19 @@ if (!context || !context.step) {
       const customId = text.trim().toUpperCase();
       
       try {
-        const appointment = await getAppointmentByCustomId(customId);
+        // Obtener el appointment sin filtrar por company_id (los custom_id son únicos globalmente)
+        const appointment = await getAppointmentByCustomId(customId, null);
         
         if (!appointment) {
           await sendMessage(from, `❌ No encontramos una cita con ese número. Verifica que sea correcto e intenta de nuevo.`);
           return;
         }
         
+        // Usar el company_id del appointment para cancelar
+        const company_id = appointment.company_id;
+        
         // Confirmar cancelación
-        await cancelAppointmentByCustomId(customId);
+        await cancelAppointmentByCustomId(customId, company_id);
         await sendMessage(from, `✅ ¡Cita ${customId} cancelada correctamente!`);
         userContext.delete(from);
       } catch (error) {
@@ -496,11 +513,11 @@ if (!context || !context.step) {
     // ---------- PIDIENDO NOTAS ----------
     if (context?.step === 'asking-notes') {
       const notes = text;
-      const { datetime, user_id: userId } = context;
+      const { datetime, user_id: userId, company_id: ctxCompanyId } = context;
 
       try {
         // Guardar la cita con las notas
-        const appointment = await bookAppointment(from, datetime, 'physio', userId, notes);
+        const appointment = await bookAppointment(from, datetime, 'physio', userId, notes, ctxCompanyId || company_id);
 
         const customId = appointment.custom_id;
         const appointmentTime = datetime.split('T')[1].slice(0, 5);
@@ -534,9 +551,18 @@ if (!context || !context.step) {
 
 // ===================== API =====================
 
-app.get('/api/appointments', verifyToken, async (_, res) => {
+app.get('/api/appointments', verifyToken, async (req, res) => {
   try {
-    const appointments = await getAllAppointments();
+    // Los usuarios normales solo ven sus citas
+    // Los admins ven todas las citas de su empresa
+    let company_id = req.user.company_id;
+    
+    // Si es superadmin sin company específica, puede ver todo
+    if (req.user.role === 'superadmin' && req.query.company_id) {
+      company_id = req.query.company_id;
+    }
+    
+    const appointments = await getAllAppointments(company_id);
     res.json(appointments);
   } catch (err) {
     console.error(err);
@@ -547,7 +573,7 @@ app.get('/api/appointments', verifyToken, async (_, res) => {
 app.get('/api/appointments/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const appointment = await getAppointmentById(id);
+    const appointment = await getAppointmentById(id, req.user.company_id);
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
@@ -566,7 +592,7 @@ app.post('/api/appointments', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'phone, datetime, and user_id are required' });
     }
 
-    const appointment = await bookAppointment(phone, datetime, service, user_id, notes);
+    const appointment = await bookAppointment(phone, datetime, service, user_id, notes, req.user.company_id);
     res.status(201).json(appointment);
   } catch (err) {
     console.error(err);
@@ -586,11 +612,14 @@ app.put('/api/appointments/:id', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'No updates provided' });
     }
 
-    const appointment = await updateAppointment(id, updates);
+    // Verificar que la cita pertenece a la empresa del usuario
+    const appointment = await getAppointmentById(id, req.user.company_id);
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
-    res.json(appointment);
+
+    const updated = await updateAppointment(id, updates);
+    res.json(updated);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error updating appointment' });
@@ -600,11 +629,15 @@ app.put('/api/appointments/:id', verifyToken, async (req, res) => {
 app.delete('/api/appointments/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const appointment = await deleteAppointment(id);
+    
+    // Verificar que la cita pertenece a la empresa del usuario
+    const appointment = await getAppointmentById(id, req.user.company_id);
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
-    res.json({ message: 'Appointment deleted', appointment });
+    
+    const deleted = await deleteAppointment(id);
+    res.json({ message: 'Appointment deleted', appointment: deleted });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error deleting appointment' });
@@ -635,9 +668,11 @@ app.get('/api/slots/:date', verifyToken, async (req, res) => {
 
 // ===================== USERS ENDPOINTS =====================
 
-app.get('/api/users', verifyToken, async (_, res) => {
+app.get('/api/users', verifyToken, async (req, res) => {
   try {
-    const users = await getAllUsers();
+    // Los usuarios normales solo ven a otros usuarios de su empresa
+    // Los admins ven todos los usuarios de su empresa
+    const users = await getAllUsers(req.user.company_id);
     res.json(users);
   } catch (err) {
     console.error(err);
@@ -648,7 +683,7 @@ app.get('/api/users', verifyToken, async (_, res) => {
 app.get('/api/users/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const user = await getUserById(id);
+    const user = await getUserById(id, req.user.company_id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -661,18 +696,20 @@ app.get('/api/users/:id', verifyToken, async (req, res) => {
 
 app.post('/api/users', verifyToken, async (req, res) => {
   try {
-    const { name, email, phone, type, specialties } = req.body;
+    const { username, name, email, phone, type, specialties, password } = req.body;
 
-    if (!name || !email) {
-      return res.status(400).json({ error: 'Name and email are required' });
+    if (!username || !name || !email) {
+      return res.status(400).json({ error: 'Username, name and email are required' });
     }
 
-    const user = await createUser(name, email, phone, type, specialties);
+    // Los usuarios se crean siempre en la empresa del usuario autenticado
+    const hashedPassword = password ? await bcrypt.hash(password, 10) : await bcrypt.hash('defaultPass123', 10);
+    const user = await createUser(username, name, email, hashedPassword, phone, type, specialties, req.user.company_id);
     res.status(201).json(user);
   } catch (err) {
     console.error('Error creating user:', err);
     if (err.code === '23505') { // Unique constraint violation
-      return res.status(409).json({ error: 'Email already exists' });
+      return res.status(409).json({ error: 'Email or username already exists' });
     }
     res.status(500).json({ error: err.message || 'Error creating user' });
   }
@@ -687,16 +724,27 @@ app.put('/api/users/:id', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'No updates provided' });
     }
 
+    // Verificar que el usuario pertenece a la empresa del usuario autenticado
+    const user = await getUserById(id, req.user.company_id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Solo superadmin puede asignar el rol de superadmin
+    if (updates.role === 'superadmin' && req.user.role !== 'superadmin') {
+      return res.status(403).json({ error: 'Only superadmin can assign superadmin role' });
+    }
+
     // Si viene una password nueva, encriptarla
     if (updates.password) {
       updates.password = await bcrypt.hash(updates.password, 10);
     }
 
-    const user = await updateUser(id, updates);
-    if (!user) {
+    const updated = await updateUser(id, updates);
+    if (!updated) {
       return res.status(404).json({ error: 'User not found' });
     }
-    res.json(user);
+    res.json(updated);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error updating user' });
@@ -706,11 +754,15 @@ app.put('/api/users/:id', verifyToken, async (req, res) => {
 app.delete('/api/users/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const user = await deleteUser(id);
+    
+    // Verificar que el usuario pertenece a la empresa del usuario autenticado
+    const user = await getUserById(id, req.user.company_id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    res.json({ message: 'User deleted', user });
+    
+    const deleted = await deleteUser(id);
+    res.json({ message: 'User deleted', user: deleted });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error deleting user' });
@@ -723,9 +775,9 @@ app.get('/api/planning', verifyToken, async (req, res) => {
   try {
     const { user_id, start_date, end_date } = req.query;
     
-    // Si el usuario es admin, puede ver todos los plannings
-    if (req.user.role === 'admin') {
-      const planning = await getAllPlanning(start_date, end_date);
+    // Si el usuario es admin, puede ver todos los plannings de su empresa
+    if (req.user.role === 'admin' || req.user.role === 'superadmin') {
+      const planning = await getAllPlanning(start_date, end_date, req.user.company_id);
       return res.json(planning);
     }
 
@@ -734,7 +786,7 @@ app.get('/api/planning', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'user_id is required' });
     }
 
-    const planning = await getPlanningByUser(user_id, start_date, end_date);
+    const planning = await getPlanningByUser(user_id, start_date, end_date, req.user.company_id);
     res.json(planning);
   } catch (err) {
     console.error(err);
@@ -748,11 +800,11 @@ app.get('/api/planning/user/:user_id', verifyToken, async (req, res) => {
     const { start_date, end_date } = req.query;
 
     // Solo admin o el propio usuario pueden ver el planning
-    if (req.user.role !== 'admin' && req.user.id !== parseInt(user_id)) {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && req.user.id !== parseInt(user_id)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
-    const planning = await getPlanningByUser(user_id, start_date, end_date);
+    const planning = await getPlanningByUser(user_id, start_date, end_date, req.user.company_id);
     res.json(planning);
   } catch (err) {
     console.error(err);
@@ -769,11 +821,11 @@ app.post('/api/planning', verifyToken, async (req, res) => {
     }
 
     // Solo admin puede crear plannings
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only admin can create planning' });
     }
 
-    const planning = await createPlanning(user_id, date, type, notes);
+    const planning = await createPlanning(user_id, date, type, notes, req.user.company_id);
     res.status(201).json(planning);
   } catch (err) {
     console.error(err);
@@ -791,7 +843,7 @@ app.post('/api/planning/bulk', verifyToken, async (req, res) => {
     }
 
     // Solo admin puede crear plannings
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only admin can create planning' });
     }
 
@@ -814,7 +866,7 @@ app.post('/api/planning/bulk', verifyToken, async (req, res) => {
     // Crear planning para cada fecha
     const createdPlannings = [];
     for (const date of dates) {
-      const planning = await createPlanning(user_id, date, type, notes);
+      const planning = await createPlanning(user_id, date, type, notes, req.user.company_id);
       createdPlannings.push(planning);
     }
 
@@ -839,7 +891,7 @@ app.put('/api/planning/:id', verifyToken, async (req, res) => {
     }
 
     // Solo admin puede actualizar plannings
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only admin can update planning' });
     }
 
@@ -859,7 +911,7 @@ app.delete('/api/planning/:id', verifyToken, async (req, res) => {
     const { id } = req.params;
 
     // Solo admin puede eliminar plannings
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only admin can delete planning' });
     }
 

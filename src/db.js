@@ -133,19 +133,25 @@ const getAvailableSlots = async (date, userId = null) => {
   return slots.filter(s => !booked.includes(s))
 }
 
-const getAvailableUsersForDate = async (date) => {
-  const result = await pool.query(
-    `SELECT u.* FROM users u
+const getAvailableUsersForDate = async (date, company_id = null) => {
+  let query = `SELECT u.* FROM users u
      INNER JOIN planning p ON u.id = p.user_id AND p.date = $1
-     WHERE u.is_active = true AND p.type = 'work'
-     ORDER BY u.name ASC`,
-    [date]
-  )
+     WHERE u.is_active = true AND p.type = 'work'`
+  const params = [date]
+  
+  if (company_id) {
+    query += ` AND u.company_id = $2`
+    params.push(company_id)
+  }
+  
+  query += ` ORDER BY u.name ASC`
+  
+  const result = await pool.query(query, params)
   return result.rows
 }
 
 // ===================== CREATE =====================
-const bookAppointment = async (phone, datetime, service = 'physio', userId = null, notes = null) => {
+const bookAppointment = async (phone, datetime, service = 'physio', userId = null, notes = null, company_id = null) => {
   const check = await pool.query(
     `SELECT id FROM appointments WHERE datetime = $1 AND user_id = $2 AND status != 'cancelled'`,
     [datetime, userId]
@@ -166,28 +172,41 @@ const bookAppointment = async (phone, datetime, service = 'physio', userId = nul
   const custom_id = `${phone}-${dateStr}-${timeStr}-${randomId}`
 
   const result = await pool.query(
-    `INSERT INTO appointments (phone, datetime, service, user_id, notes, custom_id)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO appointments (company_id, phone, datetime, service, user_id, notes, custom_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [phone, datetime, service, userId, notes, custom_id]
+    [company_id, phone, datetime, service, userId, notes, custom_id]
   )
 
   return result.rows[0]
 }
 
 // ===================== GET ALL (FALTABA EXPORT BIEN) =====================
-const getAllAppointments = async () => {
-  const result = await pool.query(
-    `SELECT * FROM appointments ORDER BY datetime ASC`
-  )
+const getAllAppointments = async (company_id = null) => {
+  let query = `SELECT * FROM appointments WHERE 1=1`
+  const params = []
+  
+  if (company_id) {
+    query += ` AND company_id = $1`
+    params.push(company_id)
+  }
+  
+  query += ` ORDER BY datetime ASC`
+  
+  const result = await pool.query(query, params)
   return result.rows
 }
 
-const getAppointmentById = async (id) => {
-  const result = await pool.query(
-    `SELECT * FROM appointments WHERE id = $1`,
-    [id]
-  )
+const getAppointmentById = async (id, company_id = null) => {
+  let query = `SELECT * FROM appointments WHERE id = $1`
+  const params = [id]
+  
+  if (company_id) {
+    query += ` AND company_id = $2`
+    params.push(company_id)
+  }
+  
+  const result = await pool.query(query, params)
   return result.rows[0] || null
 }
 
@@ -226,37 +245,63 @@ const deleteAppointment = async (id) => {
   return result.rows[0]
 }
 
-const getAppointmentByCustomId = async (custom_id) => {
-  const result = await pool.query(
-    `SELECT * FROM appointments WHERE custom_id = $1 AND status != 'cancelled'`,
-    [custom_id]
-  )
+const getAppointmentByCustomId = async (custom_id, company_id = null) => {
+  let query = `SELECT * FROM appointments WHERE custom_id = $1 AND status != 'cancelled'`
+  const params = [custom_id]
+  
+  if (company_id !== null) {
+    query += ` AND company_id = $2`
+    params.push(company_id)
+  }
+  
+  const result = await pool.query(query, params)
   return result.rows[0]
 }
 
-const cancelAppointmentByCustomId = async (custom_id) => {
-  const result = await pool.query(
-    `UPDATE appointments SET status = 'cancelled', updated_at = NOW() 
-     WHERE custom_id = $1 AND status != 'cancelled'
-     RETURNING *`,
-    [custom_id]
-  )
+const cancelAppointmentByCustomId = async (custom_id, company_id = null) => {
+  let query = `UPDATE appointments SET status = 'cancelled', updated_at = NOW() 
+     WHERE custom_id = $1 AND status != 'cancelled'`
+  const params = [custom_id]
+  let paramIndex = 2
+  
+  if (company_id !== null) {
+    query += ` AND company_id = $${paramIndex}`
+    params.push(company_id)
+    paramIndex++
+  }
+  
+  query += ` RETURNING *`
+  
+  const result = await pool.query(query, params)
   return result.rows[0]
 }
 
 // ===================== users =====================
-const getAllUsers = async () => {
-  const result = await pool.query(
-    `SELECT * FROM users WHERE is_active = true ORDER BY name ASC`
-  )
+const getAllUsers = async (company_id = null) => {
+  let query = `SELECT * FROM users WHERE is_active = true`
+  const params = []
+  
+  if (company_id) {
+    query += ` AND company_id = $1`
+    params.push(company_id)
+  }
+  
+  query += ` ORDER BY name ASC`
+  
+  const result = await pool.query(query, params)
   return result.rows
 }
 
-const getUserById = async (id) => {
-  const result = await pool.query(
-    `SELECT * FROM users WHERE id = $1`,
-    [id]
-  )
+const getUserById = async (id, company_id = null) => {
+  let query = `SELECT * FROM users WHERE id = $1`
+  const params = [id]
+  
+  if (company_id) {
+    query += ` AND company_id = $2`
+    params.push(company_id)
+  }
+  
+  const result = await pool.query(query, params)
   return result.rows[0] || null
 }
 
@@ -328,23 +373,34 @@ const getUserByUsername = async (username) => {
 }
 
 // ===================== PLANNING =====================
-const getPlanningByUserAndDate = async (userId, date) => {
-  const result = await pool.query(
-    `SELECT p.*, json_build_object('id', u.id, 'name', u.name, 'email', u.email) as user 
+const getPlanningByUserAndDate = async (userId, date, company_id = null) => {
+  let query = `SELECT p.*, json_build_object('id', u.id, 'name', u.name, 'email', u.email) as user 
      FROM planning p
      JOIN users u ON p.user_id = u.id
-     WHERE p.user_id = $1 AND p.date = $2`,
-    [userId, date]
-  )
+     WHERE p.user_id = $1 AND p.date = $2`
+  const params = [userId, date]
+  
+  if (company_id) {
+    query += ` AND p.company_id = $3`
+    params.push(company_id)
+  }
+  
+  const result = await pool.query(query, params)
   return result.rows[0] || null
 }
 
-const getPlanningByUser = async (userId, startDate = null, endDate = null) => {
+const getPlanningByUser = async (userId, startDate = null, endDate = null, company_id = null) => {
   let query = `SELECT p.*, json_build_object('id', u.id, 'name', u.name, 'email', u.email) as user FROM planning p
                JOIN users u ON p.user_id = u.id
                WHERE p.user_id = $1`
   const params = [userId]
   let i = 2
+
+  if (company_id) {
+    query += ` AND p.company_id = $${i}`
+    params.push(company_id)
+    i++
+  }
 
   if (startDate) {
     query += ` AND p.date >= $${i}`
@@ -363,12 +419,18 @@ const getPlanningByUser = async (userId, startDate = null, endDate = null) => {
   return result.rows
 }
 
-const getAllPlanning = async (startDate = null, endDate = null) => {
+const getAllPlanning = async (startDate = null, endDate = null, company_id = null) => {
   let query = `SELECT p.*, json_build_object('id', u.id, 'name', u.name, 'email', u.email) as user FROM planning p
                JOIN users u ON p.user_id = u.id
                WHERE 1=1`
   const params = []
   let i = 1
+
+  if (company_id) {
+    query += ` AND p.company_id = $${i}`
+    params.push(company_id)
+    i++
+  }
 
   if (startDate) {
     query += ` AND p.date >= $${i}`
@@ -387,14 +449,14 @@ const getAllPlanning = async (startDate = null, endDate = null) => {
   return result.rows
 }
 
-const createPlanning = async (userId, date, type, notes = null) => {
+const createPlanning = async (userId, date, type, notes = null, company_id = null) => {
   const result = await pool.query(
-    `INSERT INTO planning (user_id, date, type, notes)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO planning (company_id, user_id, date, type, notes)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (user_id, date) DO UPDATE
-     SET type = $3, notes = $4, updated_at = NOW()
+     SET type = $4, notes = $5, updated_at = NOW()
      RETURNING *`,
-    [userId, date, type, notes]
+    [company_id, userId, date, type, notes]
   )
   return result.rows[0]
 }
