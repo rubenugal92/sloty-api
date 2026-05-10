@@ -19,6 +19,7 @@ const {
   getUserByEmail,
   getUserByUsername,
   getPlanningByUserAndDate,
+  getPlanningById,
   getPlanningByUser,
   getAvailableUsersForDate,
   getAllPlanning,
@@ -573,7 +574,11 @@ app.get('/api/appointments', verifyToken, async (req, res) => {
 app.get('/api/appointments/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const appointment = await getAppointmentById(id, req.user.company_id);
+    let company_id = req.user.company_id;
+    if (req.user.role === 'superadmin' && req.query.company_id) {
+      company_id = req.query.company_id;
+    }
+    const appointment = await getAppointmentById(id, company_id);
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
@@ -586,13 +591,14 @@ app.get('/api/appointments/:id', verifyToken, async (req, res) => {
 
 app.post('/api/appointments', verifyToken, async (req, res) => {
   try {
-    const { phone, datetime, service, status, notes, duration, user_id } = req.body;
+    const { phone, datetime, service, status, notes, duration, user_id, company_id } = req.body;
 
     if (!phone || !datetime || !user_id) {
       return res.status(400).json({ error: 'phone, datetime, and user_id are required' });
     }
 
-    const appointment = await bookAppointment(phone, datetime, service, user_id, notes, req.user.company_id);
+    const targetCompanyId = req.user.role === 'superadmin' ? company_id || req.user.company_id : req.user.company_id;
+    const appointment = await bookAppointment(phone, datetime, service, user_id, notes, targetCompanyId);
     res.status(201).json(appointment);
   } catch (err) {
     console.error(err);
@@ -612,8 +618,12 @@ app.put('/api/appointments/:id', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'No updates provided' });
     }
 
-    // Verificar que la cita pertenece a la empresa del usuario
-    const appointment = await getAppointmentById(id, req.user.company_id);
+    let company_id = req.user.company_id;
+    if (req.user.role === 'superadmin' && req.query.company_id) {
+      company_id = req.query.company_id;
+    }
+
+    const appointment = await getAppointmentById(id, company_id);
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
@@ -629,13 +639,16 @@ app.put('/api/appointments/:id', verifyToken, async (req, res) => {
 app.delete('/api/appointments/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    
-    // Verificar que la cita pertenece a la empresa del usuario
-    const appointment = await getAppointmentById(id, req.user.company_id);
+    let company_id = req.user.company_id;
+    if (req.user.role === 'superadmin' && req.query.company_id) {
+      company_id = req.query.company_id;
+    }
+
+    const appointment = await getAppointmentById(id, company_id);
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
-    
+
     const deleted = await deleteAppointment(id);
     res.json({ message: 'Appointment deleted', appointment: deleted });
   } catch (err) {
@@ -670,9 +683,12 @@ app.get('/api/slots/:date', verifyToken, async (req, res) => {
 
 app.get('/api/users', verifyToken, async (req, res) => {
   try {
-    // Los usuarios normales solo ven a otros usuarios de su empresa
-    // Los admins ven todos los usuarios de su empresa
-    const users = await getAllUsers(req.user.company_id);
+    let company_id = req.user.company_id;
+    if (req.user.role === 'superadmin' && req.query.company_id) {
+      company_id = req.query.company_id;
+    }
+
+    const users = await getAllUsers(company_id);
     res.json(users);
   } catch (err) {
     console.error(err);
@@ -683,7 +699,11 @@ app.get('/api/users', verifyToken, async (req, res) => {
 app.get('/api/users/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const user = await getUserById(id, req.user.company_id);
+    let company_id = req.user.company_id;
+    if (req.user.role === 'superadmin' && req.query.company_id) {
+      company_id = req.query.company_id;
+    }
+    const user = await getUserById(id, company_id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -696,15 +716,19 @@ app.get('/api/users/:id', verifyToken, async (req, res) => {
 
 app.post('/api/users', verifyToken, async (req, res) => {
   try {
-    const { username, name, email, phone, type, specialties, password } = req.body;
+    const { username, name, email, phone, type, specialties, password, company_id } = req.body;
 
     if (!username || !name || !email) {
       return res.status(400).json({ error: 'Username, name and email are required' });
     }
 
-    // Los usuarios se crean siempre en la empresa del usuario autenticado
+    const targetCompanyId = req.user.role === 'superadmin' ? company_id || req.user.company_id : req.user.company_id;
+    if (req.user.role === 'superadmin' && !targetCompanyId) {
+      return res.status(400).json({ error: 'company_id is required for superadmin user creation' });
+    }
+
     const hashedPassword = password ? await bcrypt.hash(password, 10) : await bcrypt.hash('defaultPass123', 10);
-    const user = await createUser(username, name, email, hashedPassword, phone, type, specialties, req.user.company_id);
+    const user = await createUser(username, name, email, hashedPassword, phone, type, specialties, targetCompanyId);
     res.status(201).json(user);
   } catch (err) {
     console.error('Error creating user:', err);
@@ -724,18 +748,20 @@ app.put('/api/users/:id', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'No updates provided' });
     }
 
-    // Verificar que el usuario pertenece a la empresa del usuario autenticado
-    const user = await getUserById(id, req.user.company_id);
+    let company_id = req.user.company_id;
+    if (req.user.role === 'superadmin' && req.query.company_id) {
+      company_id = req.query.company_id;
+    }
+
+    const user = await getUserById(id, company_id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Solo superadmin puede asignar el rol de superadmin
     if (updates.role === 'superadmin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only superadmin can assign superadmin role' });
     }
 
-    // Si viene una password nueva, encriptarla
     if (updates.password) {
       updates.password = await bcrypt.hash(updates.password, 10);
     }
@@ -754,13 +780,16 @@ app.put('/api/users/:id', verifyToken, async (req, res) => {
 app.delete('/api/users/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    
-    // Verificar que el usuario pertenece a la empresa del usuario autenticado
-    const user = await getUserById(id, req.user.company_id);
+    let company_id = req.user.company_id;
+    if (req.user.role === 'superadmin' && req.query.company_id) {
+      company_id = req.query.company_id;
+    }
+
+    const user = await getUserById(id, company_id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     const deleted = await deleteUser(id);
     res.json({ message: 'User deleted', user: deleted });
   } catch (err) {
@@ -774,19 +803,21 @@ app.delete('/api/users/:id', verifyToken, async (req, res) => {
 app.get('/api/planning', verifyToken, async (req, res) => {
   try {
     const { user_id, start_date, end_date } = req.query;
-    
-    // Si el usuario es admin, puede ver todos los plannings de su empresa
+    let company_id = req.user.company_id;
+    if (req.user.role === 'superadmin' && req.query.company_id) {
+      company_id = req.query.company_id;
+    }
+
     if (req.user.role === 'admin' || req.user.role === 'superadmin') {
-      const planning = await getAllPlanning(start_date, end_date, req.user.company_id);
+      const planning = await getAllPlanning(start_date, end_date, company_id);
       return res.json(planning);
     }
 
-    // Si no es admin, solo puede ver el planning de un usuario específico
     if (!user_id) {
       return res.status(400).json({ error: 'user_id is required' });
     }
 
-    const planning = await getPlanningByUser(user_id, start_date, end_date, req.user.company_id);
+    const planning = await getPlanningByUser(user_id, start_date, end_date, company_id);
     res.json(planning);
   } catch (err) {
     console.error(err);
@@ -798,13 +829,16 @@ app.get('/api/planning/user/:user_id', verifyToken, async (req, res) => {
   try {
     const { user_id } = req.params;
     const { start_date, end_date } = req.query;
+    let company_id = req.user.company_id;
+    if (req.user.role === 'superadmin' && req.query.company_id) {
+      company_id = req.query.company_id;
+    }
 
-    // Solo admin o el propio usuario pueden ver el planning
     if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && req.user.id !== parseInt(user_id)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
-    const planning = await getPlanningByUser(user_id, start_date, end_date, req.user.company_id);
+    const planning = await getPlanningByUser(user_id, start_date, end_date, company_id);
     res.json(planning);
   } catch (err) {
     console.error(err);
@@ -814,18 +848,18 @@ app.get('/api/planning/user/:user_id', verifyToken, async (req, res) => {
 
 app.post('/api/planning', verifyToken, async (req, res) => {
   try {
-    const { user_id, date, type, notes } = req.body;
+    const { user_id, date, type, notes, company_id } = req.body;
 
     if (!user_id || !date || !type) {
       return res.status(400).json({ error: 'user_id, date, and type are required' });
     }
 
-    // Solo admin puede crear plannings
     if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only admin can create planning' });
     }
 
-    const planning = await createPlanning(user_id, date, type, notes, req.user.company_id);
+    const targetCompanyId = req.user.role === 'superadmin' ? company_id || req.user.company_id : req.user.company_id;
+    const planning = await createPlanning(user_id, date, type, notes, targetCompanyId);
     res.status(201).json(planning);
   } catch (err) {
     console.error(err);
@@ -836,37 +870,33 @@ app.post('/api/planning', verifyToken, async (req, res) => {
 // ===================== PLANNING BULK (RANGO DE FECHAS) =====================
 app.post('/api/planning/bulk', verifyToken, async (req, res) => {
   try {
-    const { user_id, start_date, end_date, type, notes, include_weekends } = req.body;
+    const { user_id, start_date, end_date, type, notes, include_weekends, company_id } = req.body;
 
     if (!user_id || !start_date || !end_date || !type) {
       return res.status(400).json({ error: 'user_id, start_date, end_date, and type are required' });
     }
 
-    // Solo admin puede crear plannings
     if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only admin can create planning' });
     }
 
-    // Generar todas las fechas en el rango
+    const targetCompanyId = req.user.role === 'superadmin' ? company_id || req.user.company_id : req.user.company_id;
+
     const start = new Date(start_date);
     const end = new Date(end_date);
     const dates = [];
 
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      // Si include_weekends es false, saltar fines de semana (sábado=6, domingo=0)
       if (!include_weekends && (d.getDay() === 0 || d.getDay() === 6)) {
         continue;
       }
-      
-      // Convertir a formato YYYY-MM-DD
       const dateStr = d.toLocaleDateString('en-CA');
       dates.push(dateStr);
     }
 
-    // Crear planning para cada fecha
     const createdPlannings = [];
     for (const date of dates) {
-      const planning = await createPlanning(user_id, date, type, notes, req.user.company_id);
+      const planning = await createPlanning(user_id, date, type, notes, targetCompanyId);
       createdPlannings.push(planning);
     }
 
@@ -890,16 +920,16 @@ app.put('/api/planning/:id', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'No updates provided' });
     }
 
-    // Solo admin puede actualizar plannings
     if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only admin can update planning' });
     }
 
-    const planning = await updatePlanning(id, updates);
+    const planning = await getPlanningById(id);
     if (!planning) {
       return res.status(404).json({ error: 'Planning not found' });
     }
-    res.json(planning);
+    const updated = await updatePlanning(id, updates);
+    res.json(updated);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error updating planning' });
@@ -910,16 +940,16 @@ app.delete('/api/planning/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Solo admin puede eliminar plannings
     if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only admin can delete planning' });
     }
 
-    const planning = await deletePlanning(id);
+    const planning = await getPlanningById(id);
     if (!planning) {
       return res.status(404).json({ error: 'Planning not found' });
     }
-    res.json({ message: 'Planning deleted', planning });
+    const deleted = await deletePlanning(id);
+    res.json({ message: 'Planning deleted', planning: deleted });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error deleting planning' });

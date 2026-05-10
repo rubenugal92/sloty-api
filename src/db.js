@@ -389,6 +389,22 @@ const getPlanningByUserAndDate = async (userId, date, company_id = null) => {
   return result.rows[0] || null
 }
 
+const getPlanningById = async (id, company_id = null) => {
+  let query = `SELECT p.*, json_build_object('id', u.id, 'name', u.name, 'email', u.email) as user 
+     FROM planning p
+     JOIN users u ON p.user_id = u.id
+     WHERE p.id = $1`
+  const params = [id]
+
+  if (company_id) {
+    query += ` AND p.company_id = $2`
+    params.push(company_id)
+  }
+
+  const result = await pool.query(query, params)
+  return result.rows[0] || null
+}
+
 const getPlanningByUser = async (userId, startDate = null, endDate = null, company_id = null) => {
   let query = `SELECT p.*, json_build_object('id', u.id, 'name', u.name, 'email', u.email) as user FROM planning p
                JOIN users u ON p.user_id = u.id
@@ -591,6 +607,7 @@ module.exports = {
   getUserByEmail,
   getUserByUsername,
   getPlanningByUserAndDate,
+  getPlanningById,
   getPlanningByUser,
   getAvailableUsersForDate,
   getAllPlanning,
