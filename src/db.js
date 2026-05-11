@@ -36,7 +36,7 @@ const pool = new Pool({
         password TEXT NOT NULL,
         name TEXT,
         phone TEXT,
-        type TEXT DEFAULT 'fisio',
+        type TEXT DEFAULT 'staff',
         specialties TEXT,
         role TEXT DEFAULT 'user',
         is_active BOOLEAN DEFAULT true,
@@ -45,8 +45,7 @@ const pool = new Pool({
       )
     `)
 
-    // LEGACY: Tabla users ya no se usa (ahora todos son users con type='fisio')
-    // Se mantiene solo para backward compatibility
+    // NOTA: el campo `type` es string libre (cargo/puesto): peluquero, fisio, camarero, etc.
 
     // Tabla de citas (con user_id y company_id)
     await client.query(`
