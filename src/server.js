@@ -44,6 +44,17 @@ app.use(express.json());
 // ===================== JWT SECRET =====================
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
+// ===================== HELPERS DE SCOPE MULTI-TENANT =====================
+// Resuelve a qué company_id filtrar las queries:
+// - superadmin: null (acceso global) salvo que pase ?company_id= para acotar
+// - admin / user: siempre su propia company_id (del JWT)
+const resolveCompanyScope = (req) => {
+  if (req.user?.role === 'superadmin') {
+    return req.query.company_id ? parseInt(req.query.company_id, 10) : null;
+  }
+  return req.user?.company_id;
+};
+
 // ===================== MIDDLEWARE DE AUTENTICACIÓN =====================
 const verifyToken = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
@@ -225,11 +236,7 @@ app.get('/api/appointments', verifyToken, async (req, res) => {
 app.get('/api/appointments/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    let company_id = req.user.company_id;
-    if (req.user.role === 'superadmin' && req.query.company_id) {
-      company_id = req.query.company_id;
-    }
-    const appointment = await getAppointmentById(id, company_id);
+    const appointment = await getAppointmentById(id, resolveCompanyScope(req));
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
@@ -269,12 +276,7 @@ app.put('/api/appointments/:id', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'No updates provided' });
     }
 
-    let company_id = req.user.company_id;
-    if (req.user.role === 'superadmin' && req.query.company_id) {
-      company_id = req.query.company_id;
-    }
-
-    const appointment = await getAppointmentById(id, company_id);
+    const appointment = await getAppointmentById(id, resolveCompanyScope(req));
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
@@ -290,12 +292,7 @@ app.put('/api/appointments/:id', verifyToken, async (req, res) => {
 app.delete('/api/appointments/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    let company_id = req.user.company_id;
-    if (req.user.role === 'superadmin' && req.query.company_id) {
-      company_id = req.query.company_id;
-    }
-
-    const appointment = await getAppointmentById(id, company_id);
+    const appointment = await getAppointmentById(id, resolveCompanyScope(req));
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
@@ -350,11 +347,7 @@ app.get('/api/users', verifyToken, async (req, res) => {
 app.get('/api/users/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    let company_id = req.user.company_id;
-    if (req.user.role === 'superadmin' && req.query.company_id) {
-      company_id = req.query.company_id;
-    }
-    const user = await getUserById(id, company_id);
+    const user = await getUserById(id, resolveCompanyScope(req));
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -399,12 +392,7 @@ app.put('/api/users/:id', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'No updates provided' });
     }
 
-    let company_id = req.user.company_id;
-    if (req.user.role === 'superadmin' && req.query.company_id) {
-      company_id = req.query.company_id;
-    }
-
-    const user = await getUserById(id, company_id);
+    const user = await getUserById(id, resolveCompanyScope(req));
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -431,12 +419,7 @@ app.put('/api/users/:id', verifyToken, async (req, res) => {
 app.delete('/api/users/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    let company_id = req.user.company_id;
-    if (req.user.role === 'superadmin' && req.query.company_id) {
-      company_id = req.query.company_id;
-    }
-
-    const user = await getUserById(id, company_id);
+    const user = await getUserById(id, resolveCompanyScope(req));
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
