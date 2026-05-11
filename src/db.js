@@ -53,6 +53,7 @@ const pool = new Pool({
         id SERIAL PRIMARY KEY,
         company_id INTEGER REFERENCES companies(id),
         phone TEXT NOT NULL,
+        customer_name TEXT,
         datetime TIMESTAMP NOT NULL,
         user_id INTEGER REFERENCES users(id),
         duration INTEGER DEFAULT 60,
@@ -64,6 +65,9 @@ const pool = new Pool({
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `)
+
+    // Migración: añadir customer_name a tablas existentes
+    await client.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS customer_name TEXT`)
 
 
     // Tabla de plannings de usuarios (con company_id)
@@ -150,7 +154,7 @@ const getAvailableUsersForDate = async (date, company_id = null) => {
 }
 
 // ===================== CREATE =====================
-const bookAppointment = async (phone, datetime, service = 'physio', userId = null, notes = null, company_id = null) => {
+const bookAppointment = async (phone, datetime, service = 'physio', userId = null, notes = null, company_id = null, customer_name = null) => {
   const check = await pool.query(
     `SELECT id FROM appointments WHERE datetime = $1 AND user_id = $2 AND status != 'cancelled'`,
     [datetime, userId]
@@ -162,22 +166,32 @@ const bookAppointment = async (phone, datetime, service = 'physio', userId = nul
 
   // Generar custom_id: phone + datetime + random
   // Formato: "34612345678-20240515-1500-abc123"
-  console.log('datetime recibido:', datetime)
   const dateObj = new Date(datetime)
-  console.log('dateObj:', dateObj)
   const dateStr = dateObj.toISOString().split('T')[0].replace(/-/g, '') // YYYYMMDD
   const timeStr = dateObj.toISOString().split('T')[1].slice(0, 5).replace(':', '') // HHMM
   const randomId = Math.random().toString(36).substring(2, 8).toUpperCase()
   const custom_id = `${phone}-${dateStr}-${timeStr}-${randomId}`
 
   const result = await pool.query(
-    `INSERT INTO appointments (company_id, phone, datetime, service, user_id, notes, custom_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO appointments (company_id, phone, customer_name, datetime, service, user_id, notes, custom_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
-    [company_id, phone, datetime, service, userId, notes, custom_id]
+    [company_id, phone, customer_name, datetime, service, userId, notes, custom_id]
   )
 
   return result.rows[0]
+}
+
+// Devuelve el último nombre conocido para un teléfono (para que el bot recuerde al cliente)
+const getLastCustomerNameByPhone = async (phone) => {
+  const result = await pool.query(
+    `SELECT customer_name FROM appointments
+     WHERE phone = $1 AND customer_name IS NOT NULL AND customer_name != ''
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [phone]
+  )
+  return result.rows[0]?.customer_name || null
 }
 
 // ===================== GET ALL (FALTABA EXPORT BIEN) =====================
@@ -592,6 +606,7 @@ module.exports = {
   pool,
   getAvailableSlots,
   bookAppointment,
+  getLastCustomerNameByPhone,
   getAllAppointments,
   getAppointmentById,
   updateAppointment,

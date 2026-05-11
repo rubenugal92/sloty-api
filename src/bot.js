@@ -6,6 +6,7 @@ const {
   getPlanningByUserAndDate,
   getAppointmentByCustomId,
   cancelAppointmentByCustomId,
+  getLastCustomerNameByPhone,
 } = require('./db');
 
 // =====================================================================
@@ -225,10 +226,21 @@ const M = {
     `¡Hey! 👋 ¿En qué puedo ayudarte hoy? Dime *reservar* para pedir cita o *cancelar* si quieres anular alguna.`,
     `¡Buenas! 😊 Cuéntame, ¿quieres *reservar* una cita o *cancelar* alguna?`,
   ]),
-  askDate: () => pick([
-    `Genial 😊 ¿Para qué día te viene bien?\n\nPuedes decirme cosas como:\n• _hoy_, _mañana_, _pasado mañana_\n• _este viernes_, _lunes_\n• _22 de mayo_, _22/05_`,
-    `¡Vamos allá! ¿Qué día quieres? Algo como _mañana_, _este viernes_ o _22 de mayo_ vale.`,
+  askName: () => pick([
+    `¡Hola! 👋 Antes de empezar, ¿cómo te llamas?`,
+    `¡Bienvenido! 😊 Para personalizar tu cita, dime cómo te llamas.`,
   ]),
+  nameTooShort: () => `¿Me dices tu nombre completo, porfa? Necesito al menos un par de letras 🙂`,
+  askDate: (name) => name
+    ? pick([
+        `¡Vale ${name}! 😊 ¿Para qué día te viene bien?\n\nPuedes decirme cosas como:\n• _hoy_, _mañana_, _pasado mañana_\n• _este viernes_, _lunes_\n• _22 de mayo_, _22/05_`,
+        `Perfecto ${name}. ¿Qué día quieres? Algo como _mañana_, _este viernes_ o _22 de mayo_ vale.`,
+      ])
+    : pick([
+        `Genial 😊 ¿Para qué día te viene bien?\n\nPuedes decirme cosas como:\n• _hoy_, _mañana_, _pasado mañana_\n• _este viernes_, _lunes_\n• _22 de mayo_, _22/05_`,
+        `¡Vamos allá! ¿Qué día quieres? Algo como _mañana_, _este viernes_ o _22 de mayo_ vale.`,
+      ]),
+  recognized: (name) => `¡Hola de nuevo, ${name}! 👋 ¿Te ayudo a reservar otra cita?`,
   dateNotUnderstood: () => `Mmm, no he pillado la fecha 🤔. Prueba con _mañana_, _este viernes_, _22 de mayo_ o _22/05_.`,
   noProfessionalsThatDay: (readable) =>
     `Vaya 😔 El ${readable} no tengo a nadie disponible. ¿Probamos con otra fecha?`,
@@ -246,10 +258,10 @@ const M = {
     `Esa hora no la tengo libre 😅. Te dejo los huecos disponibles:\n${slots.map(s => `🕒 ${s}`).join('\n')}`,
   askNotes: () =>
     `¡Anotado! 📝 ¿Quieres dejarme alguna nota o motivo? (tipo de servicio, observaciones, etc.)\n\nSi no, escribe *pasar* y la dejamos sin notas.`,
-  confirmSummary: ({ readable, time, name, notes }) =>
-    `Antes de confirmar, te resumo:\n\n📅 *${readable}* a las *${time}*\n👤 Con *${name}*\n📝 ${notes || '_(sin notas)_'}\n\n¿Lo reservo? Responde *sí* para confirmar o *no* para cancelar.`,
-  bookingConfirmed: ({ readable, time, name, customId, notes }) =>
-    `✅ ¡Cita confirmada!\n\n📅 ${readable}\n🕒 ${time}\n👤 ${name}\n📝 ${notes || '_(sin notas)_'}\n\n🔑 Código de tu cita: *${customId}*\n\nGuárdalo bien — lo necesitarás si quieres cancelarla. ¡Te esperamos! 🙌`,
+  confirmSummary: ({ readable, time, name, notes, customerName }) =>
+    `Antes de confirmar, te resumo:\n\n👤 Cliente: *${customerName}*\n📅 *${readable}* a las *${time}*\n💼 Con *${name}*\n📝 ${notes || '_(sin notas)_'}\n\n¿Lo reservo? Responde *sí* para confirmar o *no* para cancelar.`,
+  bookingConfirmed: ({ readable, time, name, customId, notes, customerName }) =>
+    `✅ ¡Cita confirmada${customerName ? `, ${customerName}` : ''}!\n\n📅 ${readable}\n🕒 ${time}\n💼 ${name}\n📝 ${notes || '_(sin notas)_'}\n\n🔑 Código de tu cita: *${customId}*\n\nGuárdalo bien — lo necesitarás si quieres cancelarla. ¡Te esperamos! 🙌`,
   bookingError: () =>
     `Uff, algo se ha torcido al guardar la cita 😖. ¿Probamos otra vez en un momento?`,
   bookingDeclined: () =>
@@ -283,11 +295,19 @@ const handleIdle = async (from, text, companyId) => {
   const possibleDate = parseDateFromText(text);
 
   if (matchIntent(text, 'book') || possibleDate) {
-    setSession(from, { step: 'awaiting-date', companyId });
-    if (possibleDate) {
-      return handleAwaitingDate(from, text, companyId, getSession(from));
+    // Si ya conocemos al cliente por el teléfono, saltamos asking-name
+    const knownName = await getLastCustomerNameByPhone(from);
+    if (knownName) {
+      setSession(from, { step: 'awaiting-date', companyId, customerName: knownName });
+      if (possibleDate) {
+        return handleAwaitingDate(from, text, companyId, getSession(from));
+      }
+      await sendMessage(from, M.askDate(knownName));
+      return;
     }
-    await sendMessage(from, M.askDate());
+    // Cliente nuevo → preguntar nombre primero
+    setSession(from, { step: 'asking-name', companyId, pendingDate: possibleDate || null });
+    await sendMessage(from, M.askName());
     return;
   }
 
@@ -298,6 +318,21 @@ const handleIdle = async (from, text, companyId) => {
   }
 
   await sendMessage(from, M.welcome());
+};
+
+const handleAskingName = async (from, text, companyId, session) => {
+  const name = text.trim().replace(/\s+/g, ' ');
+  if (name.length < 2) {
+    await sendMessage(from, M.nameTooShort());
+    return;
+  }
+  // Si traíamos una fecha pendiente del primer mensaje, vamos directos a procesarla
+  if (session.pendingDate) {
+    setSession(from, { step: 'awaiting-date', companyId, customerName: name, pendingDate: null });
+    return handleAwaitingDate(from, session.pendingDate, companyId, getSession(from));
+  }
+  setSession(from, { step: 'awaiting-date', companyId, customerName: name });
+  await sendMessage(from, M.askDate(name));
 };
 
 const handleAwaitingDate = async (from, text, companyId, session) => {
@@ -396,6 +431,7 @@ const handleAskingNotes = async (from, text, companyId, session) => {
     time: session.time,
     name: session.userName,
     notes,
+    customerName: session.customerName,
   }));
 };
 
@@ -409,6 +445,7 @@ const handleConfirming = async (from, text, companyId, session) => {
         session.userId,
         session.notes || '',
         session.companyId || companyId,
+        session.customerName || null,
       );
       await sendMessage(from, M.bookingConfirmed({
         readable: formatReadableDate(session.date),
@@ -416,6 +453,7 @@ const handleConfirming = async (from, text, companyId, session) => {
         name: session.userName,
         notes: session.notes,
         customId: appointment.custom_id,
+        customerName: session.customerName,
       }));
     } catch (err) {
       console.error('[bot] booking error:', err);
@@ -485,6 +523,8 @@ const handleMessage = async (from, rawText, companyId = DEFAULT_COMPANY_ID) => {
       case undefined:
       case null:
         return handleIdle(from, text, companyId);
+      case 'asking-name':
+        return handleAskingName(from, text, companyId, session);
       case 'awaiting-date':
         return handleAwaitingDate(from, text, companyId, session);
       case 'selecting-user':

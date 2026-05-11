@@ -249,14 +249,14 @@ app.get('/api/appointments/:id', verifyToken, async (req, res) => {
 
 app.post('/api/appointments', verifyToken, async (req, res) => {
   try {
-    const { phone, datetime, service, status, notes, duration, user_id, company_id } = req.body;
+    const { phone, customer_name, datetime, service, status, notes, duration, user_id, company_id } = req.body;
 
     if (!phone || !datetime || !user_id) {
       return res.status(400).json({ error: 'phone, datetime, and user_id are required' });
     }
 
     const targetCompanyId = req.user.role === 'superadmin' ? company_id || req.user.company_id : req.user.company_id;
-    const appointment = await bookAppointment(phone, datetime, service, user_id, notes, targetCompanyId);
+    const appointment = await bookAppointment(phone, datetime, service, user_id, notes, targetCompanyId, customer_name);
     res.status(201).json(appointment);
   } catch (err) {
     console.error(err);
