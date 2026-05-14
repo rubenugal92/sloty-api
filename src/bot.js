@@ -1,4 +1,17 @@
 const { sendMessage } = require('./whatsapp');
+
+// =====================================================================
+// CREDENCIALES WABA POR CONVERSACIÓN
+// =====================================================================
+// Asociamos las credenciales del WABA de cada tenant al `from` que escribe,
+// para que cada `reply()` use las del tenant correcto sin tener que pasar
+// el arg por cada handler.
+const wabaCredsByFrom = new Map();
+
+const reply = async (from, text) => {
+  const creds = wabaCredsByFrom.get(from) || null;
+  await reply(from, text, creds);
+};
 const {
   getAvailableSlots,
   bookAppointment,
@@ -302,28 +315,28 @@ const handleIdle = async (from, text, companyId) => {
       if (possibleDate) {
         return handleAwaitingDate(from, text, companyId, getSession(from));
       }
-      await sendMessage(from, M.askDate(knownName));
+      await reply(from, M.askDate(knownName));
       return;
     }
     // Cliente nuevo → preguntar nombre primero
     setSession(from, { step: 'asking-name', companyId, pendingDate: possibleDate || null });
-    await sendMessage(from, M.askName());
+    await reply(from, M.askName());
     return;
   }
 
   if (matchIntent(text, 'cancel')) {
     setSession(from, { step: 'asking-cancel-id', companyId });
-    await sendMessage(from, M.askCancelId());
+    await reply(from, M.askCancelId());
     return;
   }
 
-  await sendMessage(from, M.welcome());
+  await reply(from, M.welcome());
 };
 
 const handleAskingName = async (from, text, companyId, session) => {
   const name = text.trim().replace(/\s+/g, ' ');
   if (name.length < 2) {
-    await sendMessage(from, M.nameTooShort());
+    await reply(from, M.nameTooShort());
     return;
   }
   // Si traíamos una fecha pendiente del primer mensaje, vamos directos a procesarla
@@ -332,19 +345,19 @@ const handleAskingName = async (from, text, companyId, session) => {
     return handleAwaitingDate(from, session.pendingDate, companyId, getSession(from));
   }
   setSession(from, { step: 'awaiting-date', companyId, customerName: name });
-  await sendMessage(from, M.askDate(name));
+  await reply(from, M.askDate(name));
 };
 
 const handleAwaitingDate = async (from, text, companyId, session) => {
   const date = parseDateFromText(text);
   if (!date) {
-    await sendMessage(from, M.dateNotUnderstood());
+    await reply(from, M.dateNotUnderstood());
     return;
   }
 
   const users = await getAvailableUsersForDate(date, companyId);
   if (!users.length) {
-    await sendMessage(from, M.noProfessionalsThatDay(formatReadableDate(date)));
+    await reply(from, M.noProfessionalsThatDay(formatReadableDate(date)));
     return;
   }
 
@@ -352,7 +365,7 @@ const handleAwaitingDate = async (from, text, companyId, session) => {
   const list = users
     .map((u, i) => `*${i + 1}.* ${u.name}${u.specialties ? ` _(${u.specialties})_` : ''}`)
     .join('\n');
-  await sendMessage(from, M.listProfessionals(formatReadableDate(date), list));
+  await reply(from, M.listProfessionals(formatReadableDate(date), list));
 };
 
 const handleSelectingUser = async (from, text, companyId, session) => {
@@ -365,19 +378,19 @@ const handleSelectingUser = async (from, text, companyId, session) => {
 
   const user = matchUserChoice(text, session.availableUsers || []);
   if (!user) {
-    await sendMessage(from, M.invalidChoice());
+    await reply(from, M.invalidChoice());
     return;
   }
 
   const planning = await getPlanningByUserAndDate(user.id, session.date, companyId);
   if (planning && (planning.type === 'vacation' || planning.type === 'sick')) {
-    await sendMessage(from, M.noSlots(user.name, formatReadableDate(session.date)));
+    await reply(from, M.noSlots(user.name, formatReadableDate(session.date)));
     return;
   }
 
   const slots = await getAvailableSlots(session.date, user.id);
   if (!slots.length) {
-    await sendMessage(from, M.noSlots(user.name, formatReadableDate(session.date)));
+    await reply(from, M.noSlots(user.name, formatReadableDate(session.date)));
     return;
   }
 
@@ -389,7 +402,7 @@ const handleSelectingUser = async (from, text, companyId, session) => {
     slots: normalizedSlots,
     companyId,
   });
-  await sendMessage(from, M.listSlots(user.name, normalizedSlots));
+  await reply(from, M.listSlots(user.name, normalizedSlots));
 };
 
 const handleSelectingTime = async (from, text, companyId, session) => {
@@ -402,14 +415,14 @@ const handleSelectingTime = async (from, text, companyId, session) => {
 
   const time = parseTime(text);
   if (!time) {
-    await sendMessage(from, M.invalidTime(session.slots || []));
+    await reply(from, M.invalidTime(session.slots || []));
     return;
   }
 
   const slots = await getAvailableSlots(session.date, session.userId);
   const normalized = slots.map(s => s.slice(0, 5));
   if (!normalized.includes(time)) {
-    await sendMessage(from, M.invalidTime(normalized));
+    await reply(from, M.invalidTime(normalized));
     return;
   }
 
@@ -420,13 +433,13 @@ const handleSelectingTime = async (from, text, companyId, session) => {
   const datetime = `${session.date}T${utcHours}:${utcMinutes}:00`;
 
   setSession(from, { step: 'asking-notes', time, datetime, companyId });
-  await sendMessage(from, M.askNotes());
+  await reply(from, M.askNotes());
 };
 
 const handleAskingNotes = async (from, text, companyId, session) => {
   const notes = matchIntent(text, 'skip') ? '' : text.trim();
   setSession(from, { step: 'confirming', notes });
-  await sendMessage(from, M.confirmSummary({
+  await reply(from, M.confirmSummary({
     readable: formatReadableDate(session.date),
     time: session.time,
     name: session.userName,
@@ -447,7 +460,7 @@ const handleConfirming = async (from, text, companyId, session) => {
         session.companyId || companyId,
         session.customerName || null,
       );
-      await sendMessage(from, M.bookingConfirmed({
+      await reply(from, M.bookingConfirmed({
         readable: formatReadableDate(session.date),
         time: session.time,
         name: session.userName,
@@ -458,9 +471,9 @@ const handleConfirming = async (from, text, companyId, session) => {
     } catch (err) {
       console.error('[bot] booking error:', err);
       if (err.message?.includes('Slot ocupado') || err.code === '23505') {
-        await sendMessage(from, `¡Uy! 😬 Justo ese hueco se acaba de ocupar. Si quieres, escribe *menú* y empezamos de nuevo.`);
+        await reply(from, `¡Uy! 😬 Justo ese hueco se acaba de ocupar. Si quieres, escribe *menú* y empezamos de nuevo.`);
       } else {
-        await sendMessage(from, M.bookingError());
+        await reply(from, M.bookingError());
       }
     }
     clearSession(from);
@@ -469,11 +482,11 @@ const handleConfirming = async (from, text, companyId, session) => {
 
   if (matchIntent(text, 'no')) {
     clearSession(from);
-    await sendMessage(from, M.bookingDeclined());
+    await reply(from, M.bookingDeclined());
     return;
   }
 
-  await sendMessage(from, M.awaitingYesNo());
+  await reply(from, M.awaitingYesNo());
 };
 
 const handleCancelId = async (from, text) => {
@@ -481,14 +494,14 @@ const handleCancelId = async (from, text) => {
   try {
     const appointment = await getAppointmentByCustomId(id, null);
     if (!appointment) {
-      await sendMessage(from, M.cancelNotFound());
+      await reply(from, M.cancelNotFound());
       return;
     }
     await cancelAppointmentByCustomId(id, appointment.company_id);
-    await sendMessage(from, M.cancelDone(id));
+    await reply(from, M.cancelDone(id));
   } catch (err) {
     console.error('[bot] cancel error:', err);
-    await sendMessage(from, M.cancelError());
+    await reply(from, M.cancelError());
   }
   clearSession(from);
 };
@@ -498,8 +511,14 @@ const handleCancelId = async (from, text) => {
 // =====================================================================
 const DEFAULT_COMPANY_ID = parseInt(process.env.DEFAULT_WHATSAPP_COMPANY_ID || '1', 10);
 
-const handleMessage = async (from, rawText, companyId = DEFAULT_COMPANY_ID) => {
+const handleMessage = async (from, rawText, companyId = DEFAULT_COMPANY_ID, credentials = null) => {
   try {
+    if (credentials) {
+      wabaCredsByFrom.set(from, credentials);
+    } else {
+      wabaCredsByFrom.delete(from); // forzar fallback a env vars
+    }
+
     const text = String(rawText || '').trim();
     if (!text) return;
 
@@ -508,17 +527,17 @@ const handleMessage = async (from, rawText, companyId = DEFAULT_COMPANY_ID) => {
     // -------- Comandos globales (funcionan en cualquier step) --------
     if (matchIntent(text, 'restart')) {
       clearSession(from);
-      await sendMessage(from, M.restarted());
+      await reply(from, M.restarted());
       return;
     }
 
     if (matchIntent(text, 'help')) {
-      await sendMessage(from, M.help());
+      await reply(from, M.help());
       return;
     }
 
     if (matchIntent(text, 'thanks') && !session.step) {
-      await sendMessage(from, M.thanks());
+      await reply(from, M.thanks());
       return;
     }
 
@@ -543,11 +562,11 @@ const handleMessage = async (from, rawText, companyId = DEFAULT_COMPANY_ID) => {
         return handleCancelId(from, text);
       default:
         clearSession(from);
-        await sendMessage(from, M.notUnderstood());
+        await reply(from, M.notUnderstood());
     }
   } catch (err) {
     console.error('[bot] handleMessage error:', err);
-    await sendMessage(from, M.bookingError());
+    await reply(from, M.bookingError());
   }
 };
 

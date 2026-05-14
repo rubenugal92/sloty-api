@@ -1,68 +1,72 @@
 // Reusable function to send WhatsApp messages via Meta Graph API
-const sendMessage = async (to, text) => {
-  const url = `https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`;
+// `credentials` = { phone_number_id, access_token }. Si no se pasan, usa env vars (legacy).
+const resolveCreds = (credentials) => {
+  const phone_number_id = credentials?.phone_number_id || process.env.PHONE_NUMBER_ID;
+  const access_token    = credentials?.access_token    || process.env.WHATSAPP_TOKEN;
+  if (!phone_number_id || !access_token) {
+    throw new Error('WhatsApp credentials missing (phone_number_id / access_token).');
+  }
+  return { phone_number_id, access_token };
+};
+
+const sendMessage = async (to, text, credentials = null) => {
+  const { phone_number_id, access_token } = resolveCreds(credentials);
+  const url = `https://graph.facebook.com/v18.0/${phone_number_id}/messages`;
 
   try {
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.WHATSAPP_TOKEN}`,
+        'Authorization': `Bearer ${access_token}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         messaging_product: "whatsapp",
-        to: to,
+        to,
         type: "text",
         text: { body: text }
       })
     });
 
     if (!response.ok) {
-      console.error('Failed to send message:', response.status, response.statusText);
+      const errBody = await response.text();
+      console.error('Failed to send message:', response.status, response.statusText, errBody);
       throw new Error(`Send message failed: ${response.statusText}`);
     }
 
-    const result = await response.json();
-    console.log('Message sent:', result);
-    return result;
+    return await response.json();
   } catch (error) {
     console.error('Error sending message:', error);
     throw error;
   }
 };
 
-// Function to send template messages (for future use with WhatsApp templates)
-const sendTemplateMessage = async (to, templateName, languageCode = 'es') => {
-  const url = `https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`;
+const sendTemplateMessage = async (to, templateName, languageCode = 'es', credentials = null) => {
+  const { phone_number_id, access_token } = resolveCreds(credentials);
+  const url = `https://graph.facebook.com/v18.0/${phone_number_id}/messages`;
 
   try {
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.WHATSAPP_TOKEN}`,
+        'Authorization': `Bearer ${access_token}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         messaging_product: "whatsapp",
-        to: to,
+        to,
         type: "template",
-        template: {
-          name: templateName,
-          language: {
-            code: languageCode
-          }
-        }
+        template: { name: templateName, language: { code: languageCode } }
       })
     });
 
     if (!response.ok) {
-      console.error('Failed to send template message:', response.status, response.statusText);
-      throw new Error(`Send template message failed: ${response.statusText}`);
+      const errBody = await response.text();
+      console.error('Failed to send template:', response.status, response.statusText, errBody);
+      throw new Error(`Send template failed: ${response.statusText}`);
     }
 
-    const result = await response.json();
-    console.log('Template message sent:', result);
-    return result;
+    return await response.json();
   } catch (error) {
     console.error('Error sending template message:', error);
     throw error;

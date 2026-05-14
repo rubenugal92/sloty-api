@@ -31,6 +31,7 @@ const {
   getAllCompanies,
   getCompanyById,
   getCompanyByCode,
+  getCompanyByWhatsappPhoneId,
   updateCompany
 } = require('./db');
 
@@ -113,14 +114,32 @@ app.post('/webhook', async (req, res) => {
     if (body.object === 'whatsapp_business_account') {
       for (const entry of body.entry || []) {
         for (const change of entry.changes || []) {
-          if (change.field === 'messages') {
-            for (const message of change.value.messages || []) {
-              if (message.type === 'text') {
-                const from = message.from;
-                const text = message.text.body;
-                await handleMessage(from, text);
-              }
+          if (change.field !== 'messages') continue;
+
+          // Resolver el tenant a partir del phone_number_id que envía Meta.
+          // Fallback a env vars (legacy single-tenant) si la company no se encuentra.
+          const phoneNumberId = change.value?.metadata?.phone_number_id || null;
+          let companyId, credentials;
+          if (phoneNumberId) {
+            const company = await getCompanyByWhatsappPhoneId(phoneNumberId);
+            if (company) {
+              companyId = company.id;
+              credentials = {
+                phone_number_id: company.whatsapp_phone_number_id,
+                access_token: company.whatsapp_access_token,
+              };
             }
+          }
+          if (!companyId) {
+            companyId = parseInt(process.env.DEFAULT_WHATSAPP_COMPANY_ID || '1', 10);
+            credentials = null; // bot/whatsapp.js caerán a env vars
+          }
+
+          for (const message of change.value.messages || []) {
+            if (message.type !== 'text') continue;
+            const from = message.from;
+            const text = message.text.body;
+            await handleMessage(from, text, companyId, credentials);
           }
         }
       }
@@ -614,7 +633,10 @@ app.get('/api/companies', verifyToken, verifySuperAdmin, async (req, res) => {
 // Crear nueva empresa
 app.post('/api/companies', verifyToken, verifySuperAdmin, async (req, res) => {
   try {
-    const { name, company_code, contact_email, phone } = req.body;
+    const {
+      name, company_code, contact_email, phone,
+      whatsapp_phone_number_id, whatsapp_access_token, whatsapp_display_number,
+    } = req.body;
 
     if (!name || !company_code) {
       return res.status(400).json({ error: 'Name and company_code are required' });
@@ -625,7 +647,11 @@ app.post('/api/companies', verifyToken, verifySuperAdmin, async (req, res) => {
       return res.status(409).json({ error: 'Company code already exists' });
     }
 
-    const company = await createCompany(name, company_code, contact_email, phone);
+    const company = await createCompany(name, company_code, contact_email, phone, {
+      phone_number_id: whatsapp_phone_number_id,
+      access_token: whatsapp_access_token,
+      display_number: whatsapp_display_number,
+    });
     res.status(201).json({ message: 'Company created successfully', company });
   } catch (err) {
     console.error(err);

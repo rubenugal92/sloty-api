@@ -20,11 +20,20 @@ const pool = new Pool({
         company_code TEXT UNIQUE NOT NULL,
         contact_email TEXT,
         phone TEXT,
+        whatsapp_phone_number_id TEXT,
+        whatsapp_access_token TEXT,
+        whatsapp_display_number TEXT,
         is_active BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `)
+
+    // Migraciones (instalaciones existentes)
+    await client.query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS whatsapp_phone_number_id TEXT`)
+    await client.query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS whatsapp_access_token    TEXT`)
+    await client.query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS whatsapp_display_number  TEXT`)
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS companies_waba_phone_id_uidx ON companies (whatsapp_phone_number_id) WHERE whatsapp_phone_number_id IS NOT NULL`)
 
     // Tabla unificada de usuarios (reemplaza usuarios + users)
     await client.query(`
@@ -562,12 +571,17 @@ const deletePlanningByUserAndDate = async (userId, date) => {
 }
 
 // ===================== COMPANIES =====================
-const createCompany = async (name, company_code, contact_email = null, phone = null) => {
+const createCompany = async (name, company_code, contact_email = null, phone = null, whatsapp = {}) => {
   const result = await pool.query(
-    `INSERT INTO companies (name, company_code, contact_email, phone)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO companies (name, company_code, contact_email, phone, whatsapp_phone_number_id, whatsapp_access_token, whatsapp_display_number)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [name, company_code, contact_email, phone]
+    [
+      name, company_code, contact_email, phone,
+      whatsapp.phone_number_id || null,
+      whatsapp.access_token || null,
+      whatsapp.display_number || null,
+    ]
   )
   return result.rows[0]
 }
@@ -595,13 +609,26 @@ const getCompanyByCode = async (company_code) => {
   return result.rows[0]
 }
 
+const getCompanyByWhatsappPhoneId = async (phone_number_id) => {
+  if (!phone_number_id) return null
+  const result = await pool.query(
+    `SELECT * FROM companies WHERE whatsapp_phone_number_id = $1 AND is_active = true LIMIT 1`,
+    [phone_number_id]
+  )
+  return result.rows[0] || null
+}
+
 const updateCompany = async (id, updates) => {
   const fields = []
   const values = []
   let i = 1
 
+  const allowed = [
+    'name', 'contact_email', 'phone', 'is_active',
+    'whatsapp_phone_number_id', 'whatsapp_access_token', 'whatsapp_display_number',
+  ]
   for (const [k, v] of Object.entries(updates)) {
-    if (['name', 'contact_email', 'phone', 'is_active'].includes(k)) {
+    if (allowed.includes(k)) {
       fields.push(`${k} = $${i}`)
       values.push(v)
       i++
@@ -657,5 +684,6 @@ module.exports = {
   getAllCompanies,
   getCompanyById,
   getCompanyByCode,
+  getCompanyByWhatsappPhoneId,
   updateCompany
 }
