@@ -10,7 +10,7 @@ const wabaCredsByFrom = new Map();
 
 const reply = async (from, text) => {
   const creds = wabaCredsByFrom.get(from) || null;
-  await reply(from, text, creds);
+  await sendMessage(from, text, creds);
 };
 const {
   getAvailableSlots,
