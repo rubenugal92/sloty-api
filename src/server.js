@@ -260,7 +260,7 @@ app.post('/api/appointments', verifyToken, async (req, res) => {
     res.status(201).json(appointment);
   } catch (err) {
     console.error(err);
-    if (err.message.includes('Slot ocupado')) {
+    if (err.message?.includes('Slot ocupado') || err.code === '23505') {
       return res.status(409).json({ error: 'Slot already booked' });
     }
     res.status(500).json({ error: 'Error creating appointment' });
@@ -482,7 +482,7 @@ app.get('/api/planning/user/:user_id', verifyToken, async (req, res) => {
 
 app.post('/api/planning', verifyToken, async (req, res) => {
   try {
-    const { user_id, date, type, notes, company_id } = req.body;
+    const { user_id, date, type, notes, company_id, start_time, end_time } = req.body;
 
     if (!user_id || !date || !type) {
       return res.status(400).json({ error: 'user_id, date, and type are required' });
@@ -493,7 +493,7 @@ app.post('/api/planning', verifyToken, async (req, res) => {
     }
 
     const targetCompanyId = req.user.role === 'superadmin' ? company_id || req.user.company_id : req.user.company_id;
-    const planning = await createPlanning(user_id, date, type, notes, targetCompanyId);
+    const planning = await createPlanning(user_id, date, type, notes, targetCompanyId, start_time || null, end_time || null);
     res.status(201).json(planning);
   } catch (err) {
     console.error(err);
@@ -504,7 +504,7 @@ app.post('/api/planning', verifyToken, async (req, res) => {
 // ===================== PLANNING BULK (RANGO DE FECHAS) =====================
 app.post('/api/planning/bulk', verifyToken, async (req, res) => {
   try {
-    const { user_id, start_date, end_date, type, notes, include_weekends, company_id } = req.body;
+    const { user_id, start_date, end_date, type, notes, include_weekends, company_id, start_time, end_time } = req.body;
 
     if (!user_id || !start_date || !end_date || !type) {
       return res.status(400).json({ error: 'user_id, start_date, end_date, and type are required' });
@@ -530,7 +530,7 @@ app.post('/api/planning/bulk', verifyToken, async (req, res) => {
 
     const createdPlannings = [];
     for (const date of dates) {
-      const planning = await createPlanning(user_id, date, type, notes, targetCompanyId);
+      const planning = await createPlanning(user_id, date, type, notes, targetCompanyId, start_time || null, end_time || null);
       createdPlannings.push(planning);
     }
 

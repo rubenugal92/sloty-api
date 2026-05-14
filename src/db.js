@@ -78,11 +78,24 @@ const pool = new Pool({
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         date DATE NOT NULL,
         type TEXT NOT NULL CHECK (type IN ('work', 'vacation', 'sick')),
+        start_time TIME,
+        end_time TIME,
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(user_id, date)
       )
+    `)
+
+    // Migraciones (ALTER si la tabla ya existía)
+    await client.query(`ALTER TABLE planning ADD COLUMN IF NOT EXISTS start_time TIME`)
+    await client.query(`ALTER TABLE planning ADD COLUMN IF NOT EXISTS end_time   TIME`)
+
+    // Índice único parcial para prevenir doble-booking del mismo empleado en el mismo datetime
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS appointments_user_datetime_active_uidx
+      ON appointments (user_id, datetime)
+      WHERE status != 'cancelled'
     `)
   } catch (err) {
     console.error('Table creation failed:', err)
@@ -94,43 +107,42 @@ const pool = new Pool({
 // ===================== SLOTS =====================
 const getAvailableSlots = async (date, userId = null) => {
   const start = `${date}T00:00:00`
-  const end = `${date}T23:59:59`
-
+  const end   = `${date}T23:59:59`
   const slots = []
 
-  // Si el usuario no trabaja ese día, no hay slots disponibles.
+  // Rango horario por defecto (local España): 09:00-20:00
+  let startHourLocal = 9
+  let endHourLocal   = 20
+
   if (userId) {
     const planning = await getPlanningByUserAndDate(userId, date)
-    if (planning && planning.type !== 'work') {
-      return []
+    if (planning && planning.type !== 'work') return []
+    if (planning && planning.start_time) {
+      startHourLocal = parseInt(planning.start_time.slice(0, 2), 10)
+    }
+    if (planning && planning.end_time) {
+      endHourLocal = parseInt(planning.end_time.slice(0, 2), 10)
     }
   }
 
-  // 🔥 FIX: Horarios de trabajo en UTC (09:00-20:00 España = 07:00-18:00 UTC)
-  const startWork = new Date(`${date}T07:00:00`)
-  const endWork = new Date(`${date}T18:00:00`)
-
-  for (let t = new Date(startWork); t < endWork; t.setMinutes(t.getMinutes() + 60)) {
-    // Mostrar en zona horaria local España (UTC+2)
-    const localTime = new Date(t.getTime() + 2 * 60 * 60 * 1000)
-    slots.push(localTime.toTimeString().slice(0, 5))
+  // Generar slots locales y guardarlos en formato "HH:MM"
+  for (let h = startHourLocal; h < endHourLocal; h++) {
+    slots.push(`${String(h).padStart(2, '0')}:00`)
   }
 
+  // Excluir slots ya bookeados para ese user
   let query = `SELECT datetime FROM appointments WHERE datetime >= $1 AND datetime <= $2 AND status != 'cancelled'`
   let params = [start, end]
-
   if (userId) {
     query += ` AND user_id = $3`
     params.push(userId)
   }
 
   const result = await pool.query(query, params)
-
   const booked = result.rows.map(r => {
-    // Convertir UTC a zona horaria local España
     const utcTime = new Date(r.datetime)
     const localTime = new Date(utcTime.getTime() + 2 * 60 * 60 * 1000)
-    return localTime.toTimeString().slice(0, 5)
+    return localTime.toISOString().slice(11, 16)
   })
 
   return slots.filter(s => !booked.includes(s))
@@ -196,29 +208,41 @@ const getLastCustomerNameByPhone = async (phone) => {
 
 // ===================== GET ALL (FALTABA EXPORT BIEN) =====================
 const getAllAppointments = async (company_id = null) => {
-  let query = `SELECT * FROM appointments WHERE 1=1`
+  let query = `
+    SELECT a.*,
+           u.name AS user_name,
+           u.specialties AS user_specialties
+    FROM appointments a
+    LEFT JOIN users u ON a.user_id = u.id
+    WHERE 1=1`
   const params = []
-  
+
   if (company_id) {
-    query += ` AND company_id = $1`
+    query += ` AND a.company_id = $1`
     params.push(company_id)
   }
-  
-  query += ` ORDER BY datetime ASC`
-  
+
+  query += ` ORDER BY a.datetime ASC`
+
   const result = await pool.query(query, params)
   return result.rows
 }
 
 const getAppointmentById = async (id, company_id = null) => {
-  let query = `SELECT * FROM appointments WHERE id = $1`
+  let query = `
+    SELECT a.*,
+           u.name AS user_name,
+           u.specialties AS user_specialties
+    FROM appointments a
+    LEFT JOIN users u ON a.user_id = u.id
+    WHERE a.id = $1`
   const params = [id]
-  
+
   if (company_id) {
-    query += ` AND company_id = $2`
+    query += ` AND a.company_id = $2`
     params.push(company_id)
   }
-  
+
   const result = await pool.query(query, params)
   return result.rows[0] || null
 }
@@ -478,14 +502,14 @@ const getAllPlanning = async (startDate = null, endDate = null, company_id = nul
   return result.rows
 }
 
-const createPlanning = async (userId, date, type, notes = null, company_id = null) => {
+const createPlanning = async (userId, date, type, notes = null, company_id = null, start_time = null, end_time = null) => {
   const result = await pool.query(
-    `INSERT INTO planning (company_id, user_id, date, type, notes)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO planning (company_id, user_id, date, type, notes, start_time, end_time)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (user_id, date) DO UPDATE
-     SET type = $4, notes = $5, updated_at = NOW()
+     SET type = $4, notes = $5, start_time = $6, end_time = $7, updated_at = NOW()
      RETURNING *`,
-    [company_id, userId, date, type, notes]
+    [company_id, userId, date, type, notes, start_time, end_time]
   )
   return result.rows[0]
 }

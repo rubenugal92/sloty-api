@@ -457,7 +457,11 @@ const handleConfirming = async (from, text, companyId, session) => {
       }));
     } catch (err) {
       console.error('[bot] booking error:', err);
-      await sendMessage(from, M.bookingError());
+      if (err.message?.includes('Slot ocupado') || err.code === '23505') {
+        await sendMessage(from, `¡Uy! 😬 Justo ese hueco se acaba de ocupar. Si quieres, escribe *menú* y empezamos de nuevo.`);
+      } else {
+        await sendMessage(from, M.bookingError());
+      }
     }
     clearSession(from);
     return;
