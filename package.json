@@ -4,11 +4,10 @@
   "description": "WhatsApp appointment booking service for physiotherapy clinic",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
-    "postinstall": "npx prisma generate"
+    "start": "node src/server.js"
   },
   "engines": {
-    "node": "20.x"
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "@prisma/client": "^7.8.0",
@@ -17,6 +16,14 @@
     "jsonwebtoken": "^8.5.1",
     "pg": "^8.11.0"
   },
+  "keywords": [
+    "whatsapp",
+    "api",
+    "appointment",
+    "nodejs"
+  ],
+  "author": "",
+  "license": "ISC",
   "devDependencies": {
     "prisma": "^7.8.0"
   }
