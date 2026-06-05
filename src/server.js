@@ -241,7 +241,7 @@ app.get('/api/appointments', verifyToken, async (req, res) => {
     
     // Si es superadmin sin company específica, puede ver todo
     if (req.user.role === 'superadmin' && req.query.company_id) {
-      company_id = req.query.company_id;
+      company_id = parseInt(req.query.company_id, 10);
     }
     
     const appointments = await getAllAppointments(company_id);
@@ -352,7 +352,7 @@ app.get('/api/users', verifyToken, async (req, res) => {
   try {
     let company_id = req.user.company_id;
     if (req.user.role === 'superadmin' && req.query.company_id) {
-      company_id = req.query.company_id;
+      company_id = parseInt(req.query.company_id, 10);
     }
 
     const users = await getAllUsers(company_id);
@@ -458,7 +458,7 @@ app.get('/api/planning', verifyToken, async (req, res) => {
     const { user_id, start_date, end_date } = req.query;
     let company_id = req.user.company_id;
     if (req.user.role === 'superadmin' && req.query.company_id) {
-      company_id = req.query.company_id;
+      company_id = parseInt(req.query.company_id, 10);
     }
 
     if (req.user.role === 'admin' || req.user.role === 'superadmin') {
@@ -484,7 +484,7 @@ app.get('/api/planning/user/:user_id', verifyToken, async (req, res) => {
     const { start_date, end_date } = req.query;
     let company_id = req.user.company_id;
     if (req.user.role === 'superadmin' && req.query.company_id) {
-      company_id = req.query.company_id;
+      company_id = parseInt(req.query.company_id, 10);
     }
 
     if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && req.user.id !== parseInt(user_id)) {
