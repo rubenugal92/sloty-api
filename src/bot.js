@@ -249,11 +249,11 @@ const M = {
   askDate: (name) => name
     ? pick([
         `¡Vale ${name}! 😊 ¿Para qué día te viene bien?\n\nPuedes decirme cosas como:\n• _hoy_, _mañana_, _pasado mañana_\n• _este viernes_, _lunes_\n• _22 de mayo_, _22/05_\n\n_(Escribe *volver* para atrás o *volver a empezar de 0* para reiniciar)_`,
-        `Perfecto ${name}. ¿Qué día quieres? Algo como _mañana_, _este viernes_ o _22 de mayo_ vale.\n\n_(O *exit* para comenzar de cero)_`,
+        `Perfecto ${name}. ¿Qué día quieres? Para que te entienda mejor me puedes decir algo como _mañana_, _este viernes_ o _22 de mayo_ ...\n\n_(O *exit* para comenzar de cero)_`,
       ])
     : pick([
         `Genial 😊 ¿Para qué día te viene bien?\n\nPuedes decirme cosas como:\n• _hoy_, _mañana_, _pasado mañana_\n• _este viernes_, _lunes_\n• _22 de mayo_, _22/05_\n\n_(Di *volver a empezar de 0* si necesitas reiniciar)_`,
-        `¡Vamos allá! ¿Qué día quieres? Algo como _mañana_, _este viernes_ o _22 de mayo_ vale.`,
+        `¡Vamos allá! ¿Qué día quieres? Para que te entienda mejor me puedes decir algo como _mañana_, _este viernes_ o _22 de mayo_ ...`,
       ]),
   recognized: (name) => `¡Hola de nuevo, ${name}! 👋 ¿Te ayudo a reservar otra cita?`,
   dateNotUnderstood: () => `Mmm, no he pillado la fecha 🤔. Prueba con _mañana_, _este viernes_, _22 de mayo_ o _22/05_.`,
