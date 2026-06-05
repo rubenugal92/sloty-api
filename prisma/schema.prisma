@@ -1,8 +1,114 @@
 generator client {
   provider = "prisma-client-js"
-  //output   = "../node_modules/.prisma/client"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
+
+model User {
+  id          Int      @id @default(autoincrement())
+  username    String   @unique
+  name        String?
+  email       String   @unique
+  password    String
+  phone       String?
+  type        String?
+  specialties String?
+  role        String   @default("user")
+  isActive    Boolean  @default(true)
+
+  companyId   Int?
+  company     Company? @relation(fields: [companyId], references: [id])
+
+  appointments Appointment[]
+  plannings    Planning[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Appointment {
+  id           Int      @id @default(autoincrement())
+  phone        String
+  customerName String?
+  datetime     DateTime
+  service      String?
+  notes        String?
+  status       String   @default("confirmed")
+  duration     Int?
+  customId     String?  @unique
+
+  userId       Int?
+  user         User?    @relation(fields: [userId], references: [id])
+
+  companyId    Int?
+  company      Company? @relation(fields: [companyId], references: [id])
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([datetime])
+}
+
+model Planning {
+  id        Int      @id @default(autoincrement())
+  date      DateTime
+  type      String
+  notes     String?
+
+  startTime String?
+  endTime   String?
+
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+
+  companyId Int?
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date])
+}
+
+model Company {
+  id                     Int      @id @default(autoincrement())
+  name                   String
+  companyCode            String   @unique
+  contactEmail           String?
+  phone                  String?
+  isActive               Boolean  @default(true)
+
+  whatsappPhoneNumberId  String?
+  whatsappAccessToken    String?
+  whatsappDisplayNumber  String?
+
+  users        User[]
+  appointments Appointment[]
+  plannings    Planning[]
+
+  sessionActions SessionAction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SessionAction {
+  id          Int      @id @default(autoincrement())
+  phone       String
+  action      String
+  step        String?
+  sessionData Json?
+  errorMessage String?
+  success     Boolean  @default(true)
+
+  companyId   Int?
+  company     Company? @relation(fields: [companyId], references: [id])
+
+  createdAt   DateTime @default(now())
+
+  @@index([phone])
+}
+
