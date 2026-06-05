@@ -20,6 +20,7 @@ const {
   getAppointmentByCustomId,
   cancelAppointmentByCustomId,
   getLastCustomerNameByPhone,
+  logSessionAction,
 } = require('./db');
 
 // =====================================================================
@@ -61,7 +62,8 @@ const INTENTS = {
   book: ['cita', 'reserva', 'reservar', 'agendar', 'agenda', 'pedir hora', 'quiero ir', 'me gustaria', 'necesito hora', 'puedo ir', 'apuntar'],
   cancel: ['anular', 'cancelar', 'borrar', 'eliminar', 'no puedo ir', 'no podre'],
   help: ['ayuda', 'help', 'info', 'que puedes', 'opciones', 'que sabes hacer'],
-  restart: ['menu', 'volver', 'reiniciar', 'empezar de nuevo', 'otra vez', 'menu principal', 'salir', 'cancelar accion', 'olvidalo'],
+  restart: ['menu', 'volver', 'reiniciar', 'empezar de nuevo', 'otra vez', 'menu principal', 'salir', 'cancelar accion', 'olvidalo', 'volver a empezar de 0', 'volver a empezar', 'exit', 'start over'],
+  back: ['volver', 'volver atras', 'atras', 'atrás', 'vuelvo', 'ir atras', 'anterior', 'paso anterior', 'retroceder'],
   yes: ['si', 'sii', 'siii', 'vale', 'ok', 'okay', 'oki', 'claro', 'perfecto', 'dale', 'confirmar', 'confirmo', 'adelante', 'venga'],
   no: ['no', 'nope', 'mejor no', 'paso', 'cancela'],
   thanks: ['gracias', 'thanks', 'thx', 'muchas gracias', 'mil gracias'],
@@ -240,17 +242,17 @@ const M = {
     `¡Buenas! 😊 Cuéntame, ¿quieres *reservar* una cita o *cancelar* alguna?`,
   ]),
   askName: () => pick([
-    `¡Hola! 👋 Antes de empezar, ¿cómo te llamas?`,
-    `¡Bienvenido! 😊 Para personalizar tu cita, dime cómo te llamas.`,
+    `¡Hola! 👋 Antes de empezar, ¿cómo te llamas?\n\n_(Escribe *volver a empezar de 0* o *exit* en cualquier momento para reiniciar)_`,
+    `¡Bienvenido! 😊 Para personalizar tu cita, dime cómo te llamas.\n\n_(O di *volver a empezar de 0* para reiniciar)_`,
   ]),
   nameTooShort: () => `¿Me dices tu nombre completo, porfa? Necesito al menos un par de letras 🙂`,
   askDate: (name) => name
     ? pick([
-        `¡Vale ${name}! 😊 ¿Para qué día te viene bien?\n\nPuedes decirme cosas como:\n• _hoy_, _mañana_, _pasado mañana_\n• _este viernes_, _lunes_\n• _22 de mayo_, _22/05_`,
-        `Perfecto ${name}. ¿Qué día quieres? Algo como _mañana_, _este viernes_ o _22 de mayo_ vale.`,
+        `¡Vale ${name}! 😊 ¿Para qué día te viene bien?\n\nPuedes decirme cosas como:\n• _hoy_, _mañana_, _pasado mañana_\n• _este viernes_, _lunes_\n• _22 de mayo_, _22/05_\n\n_(Escribe *volver* para atrás o *volver a empezar de 0* para reiniciar)_`,
+        `Perfecto ${name}. ¿Qué día quieres? Algo como _mañana_, _este viernes_ o _22 de mayo_ vale.\n\n_(O *exit* para comenzar de cero)_`,
       ])
     : pick([
-        `Genial 😊 ¿Para qué día te viene bien?\n\nPuedes decirme cosas como:\n• _hoy_, _mañana_, _pasado mañana_\n• _este viernes_, _lunes_\n• _22 de mayo_, _22/05_`,
+        `Genial 😊 ¿Para qué día te viene bien?\n\nPuedes decirme cosas como:\n• _hoy_, _mañana_, _pasado mañana_\n• _este viernes_, _lunes_\n• _22 de mayo_, _22/05_\n\n_(Di *volver a empezar de 0* si necesitas reiniciar)_`,
         `¡Vamos allá! ¿Qué día quieres? Algo como _mañana_, _este viernes_ o _22 de mayo_ vale.`,
       ]),
   recognized: (name) => `¡Hola de nuevo, ${name}! 👋 ¿Te ayudo a reservar otra cita?`,
@@ -258,7 +260,7 @@ const M = {
   noProfessionalsThatDay: (readable) =>
     `Vaya 😔 El ${readable} no tengo a nadie disponible. ¿Probamos con otra fecha?`,
   listProfessionals: (readable, list) =>
-    `📅 Para el *${readable}* tengo disponibles a:\n\n${list}\n\nResponde con el *número* o el *nombre* del profesional que prefieras.`,
+    `📅 Para el *${readable}* tengo disponibles a:\n\n${list}\n\nResponde con el *número* o el *nombre* del profesional que prefieras.\n\n_(Escribe *volver* para cambiar fecha o *exit* para reiniciar)_`,
   invalidChoice: () => pick([
     `Mmm, no he encontrado a ese profesional 🤔. Dime el número de la lista o el nombre tal como aparece.`,
     `No te he entendido del todo 😅. Prueba con el número que ves en la lista (ej: 1) o el nombre.`,
@@ -266,13 +268,13 @@ const M = {
   noSlots: (name, readable) =>
     `Lo siento, *${name}* no tiene huecos el ${readable} 😕. ¿Quieres probar otra fecha o con otro profesional?`,
   listSlots: (name, slots) =>
-    `Perfecto ✨ será con *${name}*.\n\nEstos son los horarios libres:\n${slots.map(s => `🕒 ${s}`).join('\n')}\n\n¿A qué hora te viene mejor? (puedes escribir _09:00_, _9:30_, _10am_…)`,
+    `Perfecto ✨ será con *${name}*.\n\nEstos son los horarios libres:\n${slots.map(s => `🕒 ${s}`).join('\n')}\n\n¿A qué hora te viene mejor? (puedes escribir _09:00_, _9:30_, _10am_…)\n\n_(Escribe *volver* para cambiar o *volver a empezar de 0* para reiniciar)_`,
   invalidTime: (slots) =>
     `Esa hora no la tengo libre 😅. Te dejo los huecos disponibles:\n${slots.map(s => `🕒 ${s}`).join('\n')}`,
   askNotes: () =>
-    `¡Anotado! 📝 ¿Quieres dejarme alguna nota o motivo? (tipo de servicio, observaciones, etc.)\n\nSi no, escribe *pasar* y la dejamos sin notas.`,
+    `¡Anotado! 📝 ¿Quieres dejarme alguna nota o motivo? (tipo de servicio, observaciones, etc.)\n\nSi no, escribe *pasar* y la dejamos sin notas.\n\n_(Escribe *volver* para cambiar la hora, o *exit* para reiniciar desde cero)_`,
   confirmSummary: ({ readable, time, name, notes, customerName }) =>
-    `Antes de confirmar, te resumo:\n\n👤 Cliente: *${customerName}*\n📅 *${readable}* a las *${time}*\n💼 Con *${name}*\n📝 ${notes || '_(sin notas)_'}\n\n¿Lo reservo? Responde *sí* para confirmar o *no* para cancelar.`,
+    `Antes de confirmar, te resumo:\n\n👤 Cliente: *${customerName}*\n📅 *${readable}* a las *${time}*\n💼 Con *${name}*\n📝 ${notes || '_(sin notas)_'}\n\n¿Lo reservo? Responde *sí* para confirmar, *no* para cancelar, *volver* para cambios, o *exit* para reiniciar.`,
   bookingConfirmed: ({ readable, time, name, customId, notes, customerName }) =>
     `✅ ¡Cita confirmada${customerName ? `, ${customerName}` : ''}!\n\n📅 ${readable}\n🕒 ${time}\n💼 ${name}\n📝 ${notes || '_(sin notas)_'}\n\n🔑 Código de tu cita: *${customId}*\n\nGuárdalo bien — lo necesitarás si quieres cancelarla. ¡Te esperamos! 🙌`,
   bookingError: () =>
@@ -282,7 +284,7 @@ const M = {
   awaitingYesNo: () =>
     `Necesito un *sí* o un *no* para confirmar 🙂`,
   askCancelId: () =>
-    `Sin problema. ¿Cuál es el código de tu cita? (algo tipo *34612345678-20240515-1500-ABC123*)`,
+    `Sin problema. ¿Cuál es el código de tu cita? (algo tipo *34612345678-20240515-1500-ABC123*)\n\n_(O escribe *volver a empezar de 0* o *exit* para reiniciar)_`,
   cancelNotFound: () =>
     `No he encontrado ninguna cita con ese código 🔍. Asegúrate de copiarlo tal cual te lo dimos al reservar.`,
   cancelDone: (id) =>
@@ -290,7 +292,7 @@ const M = {
   cancelError: () =>
     `Vaya, no he podido cancelarla 😟. Inténtalo de nuevo dentro de un ratito.`,
   help: () =>
-    `Esto es lo que sé hacer:\n\n📅 *Reservar* — dime "quiero una cita" o directamente el día\n❌ *Cancelar* — escribe "cancelar" y tu código de cita\n🔁 *Volver al inicio* — escribe "menú" en cualquier momento\n\n¿Por dónde empezamos?`,
+    `Esto es lo que sé hacer:\n\n📅 *Reservar* — dime "quiero una cita" o directamente el día\n❌ *Cancelar* — escribe "cancelar" y tu código de cita\n🔄 *Volver atrás* — en cualquier paso, escribe "volver" para retroceder\n🔁 *Reiniciar desde cero* — escribe "volver a empezar de 0" o "exit" en cualquier momento\n\n¿Por dónde empezamos?`,
   restarted: () =>
     `Listo, empezamos de cero 🔄. ¿Qué quieres hacer? *reservar* o *cancelar*.`,
   thanks: () => pick([`¡A ti! 😊`, `¡De nada! 🙌`, `Un placer ayudarte ✨`]),
@@ -298,6 +300,98 @@ const M = {
     `Mmm, no acabo de pillarte 🤔. Escribe *menú* para empezar de nuevo, o dime directamente _reservar_ o _cancelar_.`,
     `Eso no lo he entendido 😅. Puedes decir *menú* para ver opciones.`,
   ]),
+};
+
+// =====================================================================
+// HANDLERS POR STEP
+// =====================================================================
+
+// Función auxiliar para manejar "volver atrás"
+const handleBackIntent = async (from, text, session, companyId) => {
+  if (matchIntent(text, 'back') || matchIntent(text, 'restart')) {
+    // Registrar la acción de "volver atrás"
+    await logSessionAction(
+      from,
+      matchIntent(text, 'back') ? 'go_back' : 'restart',
+      session.step,
+      session,
+      null,
+      true,
+      companyId
+    ).catch(err => console.error('[bot] logging error:', err));
+
+    if (matchIntent(text, 'restart')) {
+      clearSession(from);
+      await reply(from, M.restarted());
+      return 'restart';
+    }
+
+    // Volver al step anterior según donde estemos
+    switch (session.step) {
+      case 'asking-name':
+        clearSession(from);
+        await reply(from, M.welcome());
+        return 'back';
+      case 'awaiting-date':
+        clearSession(from);
+        await reply(from, M.welcome());
+        return 'back';
+      case 'selecting-user':
+        setSession(from, { step: 'awaiting-date', companyId, customerName: session.customerName });
+        await reply(from, M.askDate(session.customerName));
+        return 'back';
+      case 'selecting-time':
+        if (session.availableUsers) {
+          setSession(from, {
+            step: 'selecting-user',
+            date: session.date,
+            availableUsers: session.availableUsers,
+            companyId,
+            customerName: session.customerName
+          });
+          const list = session.availableUsers
+            .map((u, i) => `*${i + 1}.* ${u.name}${u.specialties ? ` _(${u.specialties})_` : ''}`)
+            .join('\n');
+          await reply(from, M.listProfessionals(formatReadableDate(session.date), list));
+        } else {
+          setSession(from, { step: 'awaiting-date', companyId, customerName: session.customerName });
+          await reply(from, M.askDate(session.customerName));
+        }
+        return 'back';
+      case 'asking-notes':
+        setSession(from, {
+          step: 'selecting-time',
+          userId: session.userId,
+          userName: session.userName,
+          date: session.date,
+          time: session.time,
+          slots: session.slots,
+          companyId,
+          customerName: session.customerName
+        });
+        await reply(from, M.listSlots(session.userName, session.slots));
+        return 'back';
+      case 'confirming':
+        setSession(from, {
+          step: 'asking-notes',
+          userId: session.userId,
+          userName: session.userName,
+          date: session.date,
+          time: session.time,
+          companyId,
+          customerName: session.customerName
+        });
+        await reply(from, M.askNotes());
+        return 'back';
+      case 'asking-cancel-id':
+        clearSession(from);
+        await reply(from, M.welcome());
+        return 'back';
+      default:
+        return null;
+    }
+  }
+  return null;
 };
 
 // =====================================================================
@@ -334,6 +428,10 @@ const handleIdle = async (from, text, companyId) => {
 };
 
 const handleAskingName = async (from, text, companyId, session) => {
+  // Permitir volver atrás
+  const backResult = await handleBackIntent(from, text, session, companyId);
+  if (backResult) return;
+
   const name = text.trim().replace(/\s+/g, ' ');
   if (name.length < 2) {
     await reply(from, M.nameTooShort());
@@ -349,6 +447,10 @@ const handleAskingName = async (from, text, companyId, session) => {
 };
 
 const handleAwaitingDate = async (from, text, companyId, session) => {
+  // Permitir volver atrás
+  const backResult = await handleBackIntent(from, text, session, companyId);
+  if (backResult) return;
+
   const date = parseDateFromText(text);
   if (!date) {
     await reply(from, M.dateNotUnderstood());
@@ -361,7 +463,7 @@ const handleAwaitingDate = async (from, text, companyId, session) => {
     return;
   }
 
-  setSession(from, { step: 'selecting-user', date, availableUsers: users, companyId });
+  setSession(from, { step: 'selecting-user', date, availableUsers: users, companyId, customerName: session.customerName });
   const list = users
     .map((u, i) => `*${i + 1}.* ${u.name}${u.specialties ? ` _(${u.specialties})_` : ''}`)
     .join('\n');
@@ -369,10 +471,14 @@ const handleAwaitingDate = async (from, text, companyId, session) => {
 };
 
 const handleSelectingUser = async (from, text, companyId, session) => {
+  // Permitir volver atrás
+  const backResult = await handleBackIntent(from, text, session, companyId);
+  if (backResult) return;
+
   // Permitir cambiar de fecha en mitad del flujo
   const newDate = parseDateFromText(text);
   if (newDate && newDate !== session.date) {
-    setSession(from, { step: 'awaiting-date', companyId });
+    setSession(from, { step: 'awaiting-date', companyId, customerName: session.customerName });
     return handleAwaitingDate(from, text, companyId, getSession(from));
   }
 
@@ -399,17 +505,24 @@ const handleSelectingUser = async (from, text, companyId, session) => {
     step: 'selecting-time',
     userId: user.id,
     userName: user.name,
+    date: session.date,
     slots: normalizedSlots,
     companyId,
+    customerName: session.customerName,
+    availableUsers: session.availableUsers
   });
   await reply(from, M.listSlots(user.name, normalizedSlots));
 };
 
 const handleSelectingTime = async (from, text, companyId, session) => {
+  // Permitir volver atrás
+  const backResult = await handleBackIntent(from, text, session, companyId);
+  if (backResult) return;
+
   // Cambio de fecha mid-flow
   const newDate = parseDateFromText(text);
   if (newDate && newDate !== session.date) {
-    setSession(from, { step: 'awaiting-date', companyId });
+    setSession(from, { step: 'awaiting-date', companyId, customerName: session.customerName });
     return handleAwaitingDate(from, text, companyId, getSession(from));
   }
 
@@ -432,13 +545,17 @@ const handleSelectingTime = async (from, text, companyId, session) => {
   const utcMinutes = String(minutes).padStart(2, '0');
   const datetime = `${session.date}T${utcHours}:${utcMinutes}:00`;
 
-  setSession(from, { step: 'asking-notes', time, datetime, companyId });
+  setSession(from, { step: 'asking-notes', time, datetime, companyId, customerName: session.customerName, userId: session.userId, userName: session.userName, date: session.date });
   await reply(from, M.askNotes());
 };
 
 const handleAskingNotes = async (from, text, companyId, session) => {
+  // Permitir volver atrás
+  const backResult = await handleBackIntent(from, text, session, companyId);
+  if (backResult) return;
+
   const notes = matchIntent(text, 'skip') ? '' : text.trim();
-  setSession(from, { step: 'confirming', notes });
+  setSession(from, { step: 'confirming', notes, companyId, userId: session.userId, userName: session.userName, date: session.date, time: session.time, datetime: session.datetime, customerName: session.customerName });
   await reply(from, M.confirmSummary({
     readable: formatReadableDate(session.date),
     time: session.time,
@@ -449,6 +566,10 @@ const handleAskingNotes = async (from, text, companyId, session) => {
 };
 
 const handleConfirming = async (from, text, companyId, session) => {
+  // Permitir volver atrás
+  const backResult = await handleBackIntent(from, text, session, companyId);
+  if (backResult) return;
+
   if (matchIntent(text, 'yes')) {
     try {
       const appointment = await bookAppointment(
@@ -468,8 +589,12 @@ const handleConfirming = async (from, text, companyId, session) => {
         customId: appointment.custom_id,
         customerName: session.customerName,
       }));
+      // Registrar éxito
+      await logSessionAction(from, 'booking_success', session.step, session, null, true, companyId).catch(err => console.error('[bot] logging error:', err));
     } catch (err) {
       console.error('[bot] booking error:', err);
+      // Registrar fallo
+      await logSessionAction(from, 'booking_error', session.step, session, err.message, false, companyId).catch(err2 => console.error('[bot] logging error:', err2));
       if (err.message?.includes('Slot ocupado') || err.code === '23505') {
         await reply(from, `¡Uy! 😬 Justo ese hueco se acaba de ocupar. Si quieres, escribe *menú* y empezamos de nuevo.`);
       } else {
@@ -483,25 +608,39 @@ const handleConfirming = async (from, text, companyId, session) => {
   if (matchIntent(text, 'no')) {
     clearSession(from);
     await reply(from, M.bookingDeclined());
+    // Registrar cancelación
+    await logSessionAction(from, 'booking_declined', session.step, session, null, true, companyId).catch(err => console.error('[bot] logging error:', err));
     return;
   }
 
   await reply(from, M.awaitingYesNo());
 };
 
-const handleCancelId = async (from, text) => {
+const handleCancelId = async (from, text, companyId = null) => {
+  const session = getSession(from) || {};
+  
+  // Permitir volver atrás
+  const backResult = await handleBackIntent(from, text, session, companyId);
+  if (backResult) return;
+
   const id = text.trim().toUpperCase();
   try {
     const appointment = await getAppointmentByCustomId(id, null);
     if (!appointment) {
       await reply(from, M.cancelNotFound());
+      // Registrar intento fallido
+      await logSessionAction(from, 'cancel_not_found', session.step, { attempted_id: id }, null, false, companyId).catch(err => console.error('[bot] logging error:', err));
       return;
     }
     await cancelAppointmentByCustomId(id, appointment.company_id);
     await reply(from, M.cancelDone(id));
+    // Registrar cancelación exitosa
+    await logSessionAction(from, 'cancel_success', session.step, { cancelled_id: id, appointment_id: appointment.id }, null, true, appointment.company_id).catch(err => console.error('[bot] logging error:', err));
   } catch (err) {
     console.error('[bot] cancel error:', err);
     await reply(from, M.cancelError());
+    // Registrar error de cancelación
+    await logSessionAction(from, 'cancel_error', session.step, { attempted_id: id }, err.message, false, companyId).catch(err2 => console.error('[bot] logging error:', err2));
   }
   clearSession(from);
 };
@@ -559,7 +698,7 @@ const handleMessage = async (from, rawText, companyId = DEFAULT_COMPANY_ID, cred
       case 'confirming':
         return handleConfirming(from, text, companyId, session);
       case 'asking-cancel-id':
-        return handleCancelId(from, text);
+        return handleCancelId(from, text, companyId);
       default:
         clearSession(from);
         await reply(from, M.notUnderstood());

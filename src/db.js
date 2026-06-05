@@ -106,6 +106,26 @@ const pool = new Pool({
       ON appointments (user_id, datetime)
       WHERE status != 'cancelled'
     `)
+
+    // Tabla de registro de acciones de sesión (para debugging y auditoría)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS session_actions (
+        id SERIAL PRIMARY KEY,
+        phone TEXT NOT NULL,
+        company_id INTEGER REFERENCES companies(id),
+        action TEXT NOT NULL,
+        step TEXT,
+        session_data JSONB,
+        error_message TEXT,
+        success BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    // Índice para búsquedas rápidas por teléfono
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS session_actions_phone_idx ON session_actions(phone, created_at DESC)
+    `)
   } catch (err) {
     console.error('Table creation failed:', err)
   } finally {
@@ -653,6 +673,53 @@ const updateCompany = async (id, updates) => {
   return result.rows[0]
 }
 
+// ===================== SESSION ACTIONS (Logging) =====================
+const logSessionAction = async (phone, action, step = null, sessionData = null, errorMsg = null, success = true, company_id = null) => {
+  const result = await pool.query(
+    `INSERT INTO session_actions (phone, company_id, action, step, session_data, error_message, success)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING *`,
+    [phone, company_id, action, step, sessionData ? JSON.stringify(sessionData) : null, errorMsg, success]
+  )
+  return result.rows[0]
+}
+
+const getSessionActionHistory = async (phone, company_id = null, limit = 50) => {
+  let query = `SELECT * FROM session_actions WHERE phone = $1`
+  const params = [phone]
+  let i = 2
+
+  if (company_id) {
+    query += ` AND company_id = $${i}`
+    params.push(company_id)
+    i++
+  }
+
+  query += ` ORDER BY created_at DESC LIMIT $${i}`
+  params.push(limit)
+
+  const result = await pool.query(query, params)
+  return result.rows
+}
+
+const getFailedSessionActions = async (company_id = null, limit = 100) => {
+  let query = `SELECT * FROM session_actions WHERE success = false`
+  const params = []
+  let i = 1
+
+  if (company_id) {
+    query += ` AND company_id = $${i}`
+    params.push(company_id)
+    i++
+  }
+
+  query += ` ORDER BY created_at DESC LIMIT $${i}`
+  params.push(limit)
+
+  const result = await pool.query(query, params)
+  return result.rows
+}
+
 module.exports = {
   pool,
   getAvailableSlots,
@@ -685,5 +752,8 @@ module.exports = {
   getCompanyById,
   getCompanyByCode,
   getCompanyByWhatsappPhoneId,
-  updateCompany
+  updateCompany,
+  logSessionAction,
+  getSessionActionHistory,
+  getFailedSessionActions
 }
