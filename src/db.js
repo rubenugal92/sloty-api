@@ -486,6 +486,11 @@ const getCompanyByWhatsappPhoneId = async (phone_number_id) => {
 }
 
 const updateCompany = async (id, updates) => {
+  const companyId = typeof id === 'string' ? parseInt(id, 10) : id
+  if (!Number.isInteger(companyId)) {
+    throw new Error('Invalid company id')
+  }
+
   const fieldMap = {
     name: 'name',
     company_code: 'companyCode',
