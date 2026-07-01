@@ -654,6 +654,31 @@ app.post('/api/planning/bulk', verifyToken, async (req, res) => {
   }
 });
 
+app.delete('/api/planning/range', verifyToken, async (req, res) => {
+  try {
+    const { user_id, start_date, end_date, company_id } = req.query;
+
+    if (!user_id || !start_date || !end_date) {
+      return res.status(400).json({ error: 'user_id, start_date, and end_date are required' });
+    }
+
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+      return res.status(403).json({ error: 'Only admin can delete planning' });
+    }
+
+    let targetCompanyId = req.user.company_id;
+    if (req.user.role === 'superadmin' && company_id) {
+      targetCompanyId = parseInt(company_id, 10);
+    }
+
+    const deleted = await deletePlanningByUserAndDateRange(user_id, start_date, end_date, targetCompanyId);
+    res.json({ message: `Deleted ${deleted.count} planning entries`, count: deleted.count });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error deleting planning range' });
+  }
+});
+
 app.put('/api/planning/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -687,7 +712,12 @@ app.delete('/api/planning/:id', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only admin can delete planning' });
     }
 
-    const planning = await getPlanningById(id);
+    let company_id = req.user.company_id;
+    if (req.user.role === 'superadmin' && req.query.company_id) {
+      company_id = parseInt(req.query.company_id, 10);
+    }
+
+    const planning = await getPlanningById(id, company_id);
     if (!planning) {
       return res.status(404).json({ error: 'Planning not found' });
     }

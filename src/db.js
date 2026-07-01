@@ -399,6 +399,21 @@ const getPlanningByUser = async (
   })
 }
 
+const getPlanningById = async (id, company_id = null) => {
+  const planningId = typeof id === 'string' ? parseInt(id, 10) : id
+  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  if (!Number.isInteger(planningId)) {
+    throw new Error('Invalid planning id')
+  }
+
+  return await prisma.planning.findFirst({
+    where: {
+      id: planningId,
+      ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
+    },
+  })
+}
+
 const getAllPlanning = async (startDate = null, endDate = null, company_id = null) => {
   return await prisma.planning.findMany({
     where: {
@@ -477,20 +492,54 @@ const updatePlanning = async (id, updates) => {
 }
 
 const deletePlanning = async (id) => {
+  const planningId = typeof id === 'string' ? parseInt(id, 10) : id
+  if (!Number.isInteger(planningId)) {
+    throw new Error('Invalid planning id')
+  }
+
   return await prisma.planning.delete({
-    where: { id },
+    where: { id: planningId },
   })
 }
 
-const deletePlanningByUserAndDate = async (userId, date) => {
-  const dateObj = new Date(`${date}T00:00:00Z`)
+const deletePlanningByUserAndDate = async (userId, date, company_id = null) => {
+  const userIdInt = typeof userId === 'string' ? parseInt(userId, 10) : userId
+  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  if (!Number.isInteger(userIdInt)) {
+    throw new Error('Invalid userId')
+  }
+
+  const dateObj = new Date(`${date}T00:00:00`)
 
   return await prisma.planning.deleteMany({
     where: {
-      userId,
+      userId: userIdInt,
+      ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
       date: {
         gte: dateObj,
         lt: new Date(dateObj.getTime() + 24 * 60 * 60 * 1000),
+      },
+    },
+  })
+}
+
+const deletePlanningByUserAndDateRange = async (userId, startDate, endDate, company_id = null) => {
+  const userIdInt = typeof userId === 'string' ? parseInt(userId, 10) : userId
+  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  if (!Number.isInteger(userIdInt)) {
+    throw new Error('Invalid userId')
+  }
+
+  const startDateObj = new Date(`${startDate}T00:00:00`)
+  const endDateObj = new Date(`${endDate}T23:59:59`)
+
+  return await prisma.planning.deleteMany({
+    where: {
+      userId: userIdInt,
+      ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
+      date: {
+        gte: startDateObj,
+        lte: endDateObj,
       },
     },
   })
@@ -666,6 +715,7 @@ module.exports = {
   updatePlanning,
   deletePlanning,
   deletePlanningByUserAndDate,
+  deletePlanningByUserAndDateRange,
   createCompany,
   getAllCompanies,
   getCompanyById,
