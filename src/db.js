@@ -6,8 +6,8 @@ const prisma = new PrismaClient()
 // =====================================================================
 
 const getAvailableSlots = async (date, userId = null) => {
-  const start = new Date(`${date}T00:00:00Z`)
-  const end = new Date(`${date}T23:59:59Z`)
+  const start = new Date(`${date}T00:00:00`)
+  const end = new Date(`${date}T23:59:59`)
   const slots = []
 
   // Default time range (Spain: 09:00-20:00)
@@ -53,7 +53,7 @@ const getAvailableSlots = async (date, userId = null) => {
 }
 
 const getAvailableUsersForDate = async (date, company_id = null) => {
-  const dateObj = new Date(`${date}T00:00:00Z`)
+  const dateObj = new Date(`${date}T00:00:00`)
 
   return await prisma.user.findMany({
     where: {
@@ -362,7 +362,7 @@ const getPlanningByUserAndDate = async (userId, date, company_id = null) => {
     throw new Error('Invalid userId')
   }
 
-  const dateObj = new Date(`${date}T00:00:00Z`)
+  const dateObj = new Date(`${date}T00:00:00`)
 
   return await prisma.planning.findFirst({
     where: {
