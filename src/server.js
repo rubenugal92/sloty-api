@@ -28,6 +28,7 @@ const {
   updatePlanning,
   deletePlanning,
   deletePlanningByUserAndDate,
+  deletePlanningByUserAndDateRange,
   createCompany,
   getAllCompanies,
   getCompanyById,
