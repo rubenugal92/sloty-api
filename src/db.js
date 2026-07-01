@@ -226,9 +226,14 @@ const getAllUsers = async (company_id = null) => {
 }
 
 const getUserById = async (id, company_id = null) => {
+  const userId = typeof id === 'string' ? parseInt(id, 10) : id
+  if (!Number.isInteger(userId)) {
+    throw new Error('Invalid user id')
+  }
+
   return await prisma.user.findFirst({
     where: {
-      id,
+      id: userId,
       ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
     },
   })
