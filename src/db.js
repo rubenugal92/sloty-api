@@ -82,6 +82,17 @@ const bookAppointment = async (
   company_id = null,
   customer_name = null
 ) => {
+  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  let targetCompanyId = companyIdInt
+
+  if (!targetCompanyId && userId) {
+    const user = await prisma.user.findUnique({
+      where: { id: typeof userId === 'string' ? parseInt(userId, 10) : userId },
+      select: { companyId: true },
+    })
+    targetCompanyId = user?.companyId || null
+  }
+
   // Check if slot is already booked
   const existing = await prisma.appointment.findFirst({
     where: {
@@ -93,6 +104,10 @@ const bookAppointment = async (
 
   if (existing) {
     throw new Error('Slot ocupado')
+  }
+
+  if (!targetCompanyId) {
+    throw new Error('Invalid company for appointment')
   }
 
   // Generate custom_id
@@ -109,7 +124,7 @@ const bookAppointment = async (
       customerName: customer_name,
       datetime: new Date(datetime),
       userId,
-      companyId: company_id,
+      companyId: targetCompanyId,
       service,
       notes,
       customId: custom_id,
@@ -132,9 +147,10 @@ const getLastCustomerNameByPhone = async (phone) => {
 }
 
 const getAllAppointments = async (company_id = null) => {
+  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
   return await prisma.appointment.findMany({
     where: {
-      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
+      ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
     },
     include: {
       user: {
@@ -149,10 +165,11 @@ const getAllAppointments = async (company_id = null) => {
 }
 
 const getAppointmentById = async (id, company_id = null) => {
+  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
   return await prisma.appointment.findFirst({
     where: {
       id,
-      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
+      ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
     },
     include: {
       user: {

@@ -586,7 +586,7 @@ const handleConfirming = async (from, text, companyId, session) => {
         time: session.time,
         name: session.userName,
         notes: session.notes,
-        customId: appointment.custom_id,
+        customId: appointment.customId,
         customerName: session.customerName,
       }));
       // Registrar éxito
