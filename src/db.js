@@ -54,6 +54,7 @@ const getAvailableSlots = async (date, userId = null) => {
 
 const getAvailableUsersForDate = async (date, company_id = null) => {
   const dateObj = new Date(`${date}T00:00:00`)
+  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
 
   return await prisma.user.findMany({
     where: {
@@ -67,7 +68,7 @@ const getAvailableUsersForDate = async (date, company_id = null) => {
           type: 'work',
         },
       },
-      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
+      ...(companyIdInt !== null && companyIdInt !== undefined && Number.isInteger(companyIdInt) && { companyId: companyIdInt }),
     },
     orderBy: { name: 'asc' },
   })
@@ -371,7 +372,7 @@ const getPlanningByUserAndDate = async (userId, date, company_id = null) => {
         gte: dateObj,
         lt: new Date(dateObj.getTime() + 24 * 60 * 60 * 1000),
       },
-      ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
+      ...(companyIdInt !== null && companyIdInt !== undefined && Number.isInteger(companyIdInt) && { companyId: companyIdInt }),
     },
   })
 }
@@ -391,8 +392,8 @@ const getPlanningByUser = async (
   return await prisma.planning.findMany({
     where: {
       userId: userIdInt,
-      ...(startDate && { date: { gte: new Date(`${startDate}T00:00:00Z`) } }),
-      ...(endDate && { date: { lte: new Date(`${endDate}T23:59:59Z`) } }),
+      ...(startDate && { date: { gte: new Date(`${startDate}T00:00:00`) } }),
+      ...(endDate && { date: { lte: new Date(`${endDate}T23:59:59`) } }),
       ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
     },
   })
@@ -401,8 +402,8 @@ const getPlanningByUser = async (
 const getAllPlanning = async (startDate = null, endDate = null, company_id = null) => {
   return await prisma.planning.findMany({
     where: {
-      ...(startDate && { date: { gte: new Date(`${startDate}T00:00:00Z`) } }),
-      ...(endDate && { date: { lte: new Date(`${endDate}T23:59:59Z`) } }),
+      ...(startDate && { date: { gte: new Date(`${startDate}T00:00:00`) } }),
+      ...(endDate && { date: { lte: new Date(`${endDate}T23:59:59`) } }),
       ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
     },
     orderBy: [{ userId: 'asc' }, { date: 'asc' }],
@@ -424,7 +425,7 @@ const createPlanning = async (
     throw new Error('Invalid userId')
   }
 
-  const dateObj = new Date(`${date}T00:00:00Z`)
+  const dateObj = new Date(`${date}T00:00:00`)
 
   return await prisma.planning.upsert({
     where: {
