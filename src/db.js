@@ -399,6 +399,29 @@ const getPlanningByUser = async (
   })
 }
 
+const getPlanningByUserAndDateRange = async (userId, startDate, endDate, company_id = null) => {
+  const userIdInt = typeof userId === 'string' ? parseInt(userId, 10) : userId
+  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  if (!Number.isInteger(userIdInt)) {
+    throw new Error('Invalid userId')
+  }
+
+  const startDateObj = new Date(`${startDate}T00:00:00`)
+  const endDateObj = new Date(`${endDate}T23:59:59`)
+
+  return await prisma.planning.findMany({
+    where: {
+      userId: userIdInt,
+      date: {
+        gte: startDateObj,
+        lte: endDateObj,
+      },
+      ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
+    },
+    orderBy: [{ date: 'asc' }],
+  })
+}
+
 const getPlanningById = async (id, company_id = null) => {
   const planningId = typeof id === 'string' ? parseInt(id, 10) : id
   const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id

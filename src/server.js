@@ -21,6 +21,7 @@ const {
   getPlanningByUserAndDate,
   getPlanningById,
   getPlanningByUser,
+  getPlanningByUserAndDateRange,
   getAvailableUsersForDate,
   getAllPlanning,
   createPlanning,
@@ -671,8 +672,17 @@ app.delete('/api/planning/range', verifyToken, async (req, res) => {
       targetCompanyId = parseInt(company_id, 10);
     }
 
+    const plannings = await getPlanningByUserAndDateRange(user_id, start_date, end_date, targetCompanyId);
+    if (!plannings.length) {
+      return res.status(404).json({ error: 'No plannings found for that range' });
+    }
+
     const deleted = await deletePlanningByUserAndDateRange(user_id, start_date, end_date, targetCompanyId);
-    res.json({ message: `Deleted ${deleted.count} planning entries`, count: deleted.count });
+    res.json({
+      message: `Deleted ${deleted.count} planning entries`,
+      count: deleted.count,
+      plannings: plannings.map(formatPlanning)
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error deleting planning range' });
