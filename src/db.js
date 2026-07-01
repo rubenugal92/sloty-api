@@ -259,22 +259,24 @@ const createUser = async (
 }
 
 const updateUser = async (id, updates) => {
-  const allowedFields = [
-    'username',
-    'name',
-    'email',
-    'password',
-    'phone',
-    'type',
-    'specialties',
-    'isActive',
-  ]
+  const fieldMap = {
+    username: 'username',
+    name: 'name',
+    email: 'email',
+    password: 'password',
+    phone: 'phone',
+    type: 'type',
+    specialties: 'specialties',
+    is_active: 'isActive',
+    isActive: 'isActive',
+  }
 
   const data = {}
 
   for (const [k, v] of Object.entries(updates)) {
-    if (allowedFields.includes(k)) {
-      data[k] = v
+    const mappedKey = fieldMap[k]
+    if (mappedKey) {
+      data[mappedKey] = v
     }
   }
 
@@ -386,12 +388,20 @@ const createPlanning = async (
 }
 
 const updatePlanning = async (id, updates) => {
-  const allowedFields = ['type', 'notes', 'startTime', 'endTime']
+  const fieldMap = {
+    type: 'type',
+    notes: 'notes',
+    start_time: 'startTime',
+    end_time: 'endTime',
+    startTime: 'startTime',
+    endTime: 'endTime',
+  }
   const data = {}
 
   for (const [k, v] of Object.entries(updates)) {
-    if (allowedFields.includes(k)) {
-      data[k] = v
+    const mappedKey = fieldMap[k]
+    if (mappedKey) {
+      data[mappedKey] = v
     }
   }
 
@@ -476,22 +486,32 @@ const getCompanyByWhatsappPhoneId = async (phone_number_id) => {
 }
 
 const updateCompany = async (id, updates) => {
-  const allowedFields = [
-    'name',
-    'contactEmail',
-    'phone',
-    'isActive',
-    'whatsappPhoneNumberId',
-    'whatsappAccessToken',
-    'whatsappDisplayNumber',
-  ]
+  const fieldMap = {
+    name: 'name',
+    contact_email: 'contactEmail',
+    contactEmail: 'contactEmail',
+    phone: 'phone',
+    is_active: 'isActive',
+    isActive: 'isActive',
+    whatsapp_phone_number_id: 'whatsappPhoneNumberId',
+    whatsappPhoneNumberId: 'whatsappPhoneNumberId',
+    whatsapp_access_token: 'whatsappAccessToken',
+    whatsappAccessToken: 'whatsappAccessToken',
+    whatsapp_display_number: 'whatsappDisplayNumber',
+    whatsappDisplayNumber: 'whatsappDisplayNumber',
+  }
 
   const data = {}
 
   for (const [k, v] of Object.entries(updates)) {
-    if (allowedFields.includes(k)) {
-      data[k] = v
+    const mappedKey = fieldMap[k]
+    if (mappedKey) {
+      data[mappedKey] = v
     }
+  }
+
+  if (Object.keys(data).length === 0) {
+    throw new Error('No valid company fields to update')
   }
 
   return await prisma.company.update({
