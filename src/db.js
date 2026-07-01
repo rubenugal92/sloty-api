@@ -165,10 +165,15 @@ const getAllAppointments = async (company_id = null) => {
 }
 
 const getAppointmentById = async (id, company_id = null) => {
+  const appointmentId = typeof id === 'string' ? parseInt(id, 10) : id
+  if (!Number.isInteger(appointmentId)) {
+    throw new Error('Invalid appointment id')
+  }
+
   const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
   return await prisma.appointment.findFirst({
     where: {
-      id,
+      id: appointmentId,
       ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
     },
     include: {
@@ -183,6 +188,10 @@ const getAppointmentById = async (id, company_id = null) => {
 }
 
 const updateAppointment = async (id, updates) => {
+  const appointmentId = typeof id === 'string' ? parseInt(id, 10) : id
+  if (!Number.isInteger(appointmentId)) {
+    throw new Error('Invalid appointment id')
+  }
   const allowedFields = ['status', 'notes', 'service', 'duration']
   const data = {}
 
@@ -193,14 +202,19 @@ const updateAppointment = async (id, updates) => {
   }
 
   return await prisma.appointment.update({
-    where: { id },
+    where: { id: appointmentId },
     data,
   })
 }
 
 const deleteAppointment = async (id) => {
+  const appointmentId = typeof id === 'string' ? parseInt(id, 10) : id
+  if (!Number.isInteger(appointmentId)) {
+    throw new Error('Invalid appointment id')
+  }
+
   return await prisma.appointment.delete({
-    where: { id },
+    where: { id: appointmentId },
   })
 }
 
