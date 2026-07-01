@@ -202,8 +202,8 @@ app.post('/webhook', async (req, res) => {
             if (company) {
               companyId = company.id;
               credentials = {
-                phone_number_id: company.whatsapp_phone_number_id,
-                access_token: company.whatsapp_access_token,
+                phone_number_id: company.whatsappPhoneNumberId || company.whatsapp_phone_number_id,
+                access_token: company.whatsappAccessToken || company.whatsapp_access_token,
               };
             }
           }
@@ -430,6 +430,26 @@ app.get('/api/users', verifyToken, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error fetching users' });
+  }
+});
+
+app.get('/api/users/available', verifyToken, async (req, res) => {
+  try {
+    const { date } = req.query;
+    if (!date) {
+      return res.status(400).json({ error: 'date is required' });
+    }
+
+    let company_id = req.user.company_id;
+    if (req.user.role === 'superadmin' && req.query.company_id) {
+      company_id = parseInt(req.query.company_id, 10);
+    }
+
+    const users = await getAvailableUsersForDate(date, company_id);
+    res.json(users.map(formatUser));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error fetching available users' });
   }
 });
 
