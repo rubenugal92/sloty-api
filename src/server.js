@@ -42,6 +42,83 @@ const app = express();
 
 app.use(express.json());
 
+// ----------------- Helpers: format responses to API contract (snake_case) -----------------
+const toSnake = (str) => str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)
+
+const formatAppointment = (a) => {
+  if (!a) return null
+  return {
+    id: a.id,
+    phone: a.phone,
+    customer_name: a.customerName || null,
+    datetime: a.datetime,
+    service: a.service || null,
+    notes: a.notes || null,
+    status: a.status || null,
+    duration: a.duration || null,
+    custom_id: a.customId || null,
+    user_id: a.userId || (a.user && a.user.id) || null,
+    user_name: (a.user && (a.user.name || a.user.user_name)) || null,
+    user_specialties: (a.user && (a.user.specialties || a.user.specialities)) || null,
+    company_id: a.companyId || null,
+    created_at: a.createdAt || null,
+    updated_at: a.updatedAt || null,
+  }
+}
+
+const formatPlanning = (p) => {
+  if (!p) return null
+  return {
+    id: p.id,
+    date: p.date ? (typeof p.date === 'string' ? p.date : p.date.toISOString().split('T')[0]) : null,
+    type: p.type,
+    notes: p.notes || null,
+    start_time: p.startTime || null,
+    end_time: p.endTime || null,
+    user_id: p.userId || null,
+    user_name: (p.user && (p.user.name || p.user.user_name)) || null,
+    company_id: p.companyId || null,
+    created_at: p.createdAt || null,
+    updated_at: p.updatedAt || null,
+  }
+}
+
+const formatUser = (u) => {
+  if (!u) return null
+  return {
+    id: u.id,
+    username: u.username,
+    name: u.name || null,
+    email: u.email,
+    phone: u.phone || null,
+    type: u.type || null,
+    specialties: u.specialties || null,
+    role: u.role || null,
+    is_active: typeof u.isActive === 'boolean' ? u.isActive : (u.is_active ?? null),
+    company_id: u.companyId || u.company_id || null,
+    created_at: u.createdAt || null,
+    updated_at: u.updatedAt || null,
+  }
+}
+
+const formatCompany = (c) => {
+  if (!c) return null
+  return {
+    id: c.id,
+    name: c.name,
+    company_code: c.companyCode || c.company_code,
+    contact_email: c.contactEmail || c.contact_email || null,
+    phone: c.phone || null,
+    is_active: typeof c.isActive === 'boolean' ? c.isActive : (c.is_active ?? null),
+    whatsapp_phone_number_id: c.whatsappPhoneNumberId || c.whatsapp_phone_number_id || null,
+    whatsapp_access_token: c.whatsappAccessToken || c.whatsapp_access_token || null,
+    whatsapp_display_number: c.whatsappDisplayNumber || c.whatsapp_display_number || null,
+    created_at: c.createdAt || null,
+    updated_at: c.updatedAt || null,
+  }
+}
+
+
 // ===================== JWT SECRET =====================
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
@@ -181,7 +258,7 @@ app.post('/auth/register', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = await createUser(username, name, email, hashedPassword, phone, type, specialities, company_id);
 
-    res.status(201).json({ message: 'User registered successfully', user: { id: user.id, email: user.email, username: user.username, company_id: user.company_id } });
+    res.status(201).json({ message: 'User registered successfully', user: formatUser(user) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error registering user' });
@@ -216,14 +293,7 @@ app.post('/auth/login', async (req, res) => {
     res.json({ 
       message: 'Login successful', 
       token, 
-      user: { 
-        id: user.id, 
-        email: user.email, 
-        username: user.username, 
-        name: user.name, 
-        role: user.role,
-        company_id: user.company_id
-      } 
+      user: formatUser(user)
     });
   } catch (err) {
     console.error(err);
@@ -245,7 +315,7 @@ app.get('/api/appointments', verifyToken, async (req, res) => {
     }
     
     const appointments = await getAllAppointments(company_id);
-    res.json(appointments);
+    res.json(appointments.map(formatAppointment));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error fetching appointments' });
@@ -259,7 +329,7 @@ app.get('/api/appointments/:id', verifyToken, async (req, res) => {
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
-    res.json(appointment);
+    res.json(formatAppointment(appointment));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error fetching appointment' });
@@ -276,7 +346,7 @@ app.post('/api/appointments', verifyToken, async (req, res) => {
 
     const targetCompanyId = req.user.role === 'superadmin' ? company_id || req.user.company_id : req.user.company_id;
     const appointment = await bookAppointment(phone, datetime, service, user_id, notes, targetCompanyId, customer_name);
-    res.status(201).json(appointment);
+    res.status(201).json(formatAppointment(appointment));
   } catch (err) {
     console.error(err);
     if (err.message?.includes('Slot ocupado') || err.code === '23505') {
@@ -301,7 +371,7 @@ app.put('/api/appointments/:id', verifyToken, async (req, res) => {
     }
 
     const updated = await updateAppointment(id, updates);
-    res.json(updated);
+    res.json(formatAppointment(updated));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error updating appointment' });
@@ -317,7 +387,7 @@ app.delete('/api/appointments/:id', verifyToken, async (req, res) => {
     }
 
     const deleted = await deleteAppointment(id);
-    res.json({ message: 'Appointment deleted', appointment: deleted });
+    res.json({ message: 'Appointment deleted', appointment: formatAppointment(deleted) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error deleting appointment' });
@@ -356,7 +426,7 @@ app.get('/api/users', verifyToken, async (req, res) => {
     }
 
     const users = await getAllUsers(company_id);
-    res.json(users);
+    res.json(users.map(formatUser));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error fetching users' });
@@ -370,7 +440,7 @@ app.get('/api/users/:id', verifyToken, async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    res.json(user);
+    res.json(formatUser(user));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error fetching user' });
@@ -392,7 +462,7 @@ app.post('/api/users', verifyToken, async (req, res) => {
 
     const hashedPassword = password ? await bcrypt.hash(password, 10) : await bcrypt.hash('defaultPass123', 10);
     const user = await createUser(username, name, email, hashedPassword, phone, type, specialties, targetCompanyId);
-    res.status(201).json(user);
+    res.status(201).json(formatUser(user));
   } catch (err) {
     console.error('Error creating user:', err);
     if (err.code === '23505') { // Unique constraint violation
@@ -428,7 +498,7 @@ app.put('/api/users/:id', verifyToken, async (req, res) => {
     if (!updated) {
       return res.status(404).json({ error: 'User not found' });
     }
-    res.json(updated);
+    res.json(formatUser(updated));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error updating user' });
@@ -444,7 +514,7 @@ app.delete('/api/users/:id', verifyToken, async (req, res) => {
     }
 
     const deleted = await deleteUser(id);
-    res.json({ message: 'User deleted', user: deleted });
+    res.json({ message: 'User deleted', user: formatUser(deleted) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error deleting user' });
@@ -461,9 +531,9 @@ app.get('/api/planning', verifyToken, async (req, res) => {
       company_id = parseInt(req.query.company_id, 10);
     }
 
-    if (req.user.role === 'admin' || req.user.role === 'superadmin') {
+      if (req.user.role === 'admin' || req.user.role === 'superadmin') {
       const planning = await getAllPlanning(start_date, end_date, company_id);
-      return res.json(planning);
+      return res.json(planning.map(formatPlanning));
     }
 
     if (!user_id) {
@@ -471,7 +541,7 @@ app.get('/api/planning', verifyToken, async (req, res) => {
     }
 
     const planning = await getPlanningByUser(user_id, start_date, end_date, company_id);
-    res.json(planning);
+    res.json(planning.map(formatPlanning));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error fetching planning' });
@@ -492,7 +562,7 @@ app.get('/api/planning/user/:user_id', verifyToken, async (req, res) => {
     }
 
     const planning = await getPlanningByUser(user_id, start_date, end_date, company_id);
-    res.json(planning);
+    res.json(planning.map(formatPlanning));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error fetching planning' });
@@ -513,7 +583,7 @@ app.post('/api/planning', verifyToken, async (req, res) => {
 
     const targetCompanyId = req.user.role === 'superadmin' ? company_id || req.user.company_id : req.user.company_id;
     const planning = await createPlanning(user_id, date, type, notes, targetCompanyId, start_time || null, end_time || null);
-    res.status(201).json(planning);
+    res.status(201).json(formatPlanning(planning));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error creating planning' });
@@ -556,7 +626,7 @@ app.post('/api/planning/bulk', verifyToken, async (req, res) => {
     res.status(201).json({
       message: `Created ${createdPlannings.length} planning entries`,
       count: createdPlannings.length,
-      plannings: createdPlannings
+      plannings: createdPlannings.map(formatPlanning)
     });
   } catch (err) {
     console.error(err);
@@ -582,7 +652,7 @@ app.put('/api/planning/:id', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Planning not found' });
     }
     const updated = await updatePlanning(id, updates);
-    res.json(updated);
+    res.json(formatPlanning(updated));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error updating planning' });
@@ -602,7 +672,7 @@ app.delete('/api/planning/:id', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Planning not found' });
     }
     const deleted = await deletePlanning(id);
-    res.json({ message: 'Planning deleted', planning: deleted });
+    res.json({ message: 'Planning deleted', planning: formatPlanning(deleted) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error deleting planning' });
@@ -623,7 +693,7 @@ const verifySuperAdmin = (req, res, next) => {
 app.get('/api/companies', verifyToken, verifySuperAdmin, async (req, res) => {
   try {
     const companies = await getAllCompanies();
-    res.json(companies);
+    res.json(companies.map(formatCompany));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error fetching companies' });
@@ -652,7 +722,7 @@ app.post('/api/companies', verifyToken, verifySuperAdmin, async (req, res) => {
       access_token: whatsapp_access_token,
       display_number: whatsapp_display_number,
     });
-    res.status(201).json({ message: 'Company created successfully', company });
+    res.status(201).json({ message: 'Company created successfully', company: formatCompany(company) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error creating company' });
@@ -669,7 +739,7 @@ app.get('/api/companies/:id', verifyToken, verifySuperAdmin, async (req, res) =>
       return res.status(404).json({ error: 'Company not found' });
     }
     
-    res.json(company);
+    res.json(formatCompany(company));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error fetching company' });
@@ -691,7 +761,7 @@ app.put('/api/companies/:id', verifyToken, verifySuperAdmin, async (req, res) =>
       return res.status(404).json({ error: 'Company not found' });
     }
 
-    res.json(company);
+    res.json(formatCompany(company));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error updating company' });

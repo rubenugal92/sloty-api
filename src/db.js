@@ -60,11 +60,14 @@ const getAvailableUsersForDate = async (date, company_id = null) => {
       isActive: true,
       plannings: {
         some: {
-          date: dateObj,
+          date: {
+            gte: dateObj,
+            lt: new Date(dateObj.getTime() + 24 * 60 * 60 * 1000),
+          },
           type: 'work',
         },
       },
-      ...(company_id && { companyId: company_id }),
+      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
     },
     orderBy: { name: 'asc' },
   })
@@ -131,7 +134,7 @@ const getLastCustomerNameByPhone = async (phone) => {
 const getAllAppointments = async (company_id = null) => {
   return await prisma.appointment.findMany({
     where: {
-      ...(company_id && { companyId: company_id }),
+      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
     },
     include: {
       user: {
@@ -149,7 +152,7 @@ const getAppointmentById = async (id, company_id = null) => {
   return await prisma.appointment.findFirst({
     where: {
       id,
-      ...(company_id && { companyId: company_id }),
+      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
     },
     include: {
       user: {
@@ -216,7 +219,7 @@ const getAllUsers = async (company_id = null) => {
   return await prisma.user.findMany({
     where: {
       isActive: true,
-      ...(company_id && { companyId: company_id }),
+      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
     },
     orderBy: { name: 'asc' },
   })
@@ -226,7 +229,7 @@ const getUserById = async (id, company_id = null) => {
   return await prisma.user.findFirst({
     where: {
       id,
-      ...(company_id && { companyId: company_id }),
+      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
     },
   })
 }
@@ -310,8 +313,11 @@ const getPlanningByUserAndDate = async (userId, date, company_id = null) => {
   return await prisma.planning.findFirst({
     where: {
       userId,
-      date: dateObj,
-      ...(company_id && { companyId: company_id }),
+      date: {
+        gte: dateObj,
+        lt: new Date(dateObj.getTime() + 24 * 60 * 60 * 1000),
+      },
+      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
     },
   })
 }
@@ -327,7 +333,7 @@ const getPlanningByUser = async (
       userId,
       ...(startDate && { date: { gte: new Date(`${startDate}T00:00:00Z`) } }),
       ...(endDate && { date: { lte: new Date(`${endDate}T23:59:59Z`) } }),
-      ...(company_id && { companyId: company_id }),
+      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
     },
   })
 }
@@ -337,7 +343,7 @@ const getAllPlanning = async (startDate = null, endDate = null, company_id = nul
     where: {
       ...(startDate && { date: { gte: new Date(`${startDate}T00:00:00Z`) } }),
       ...(endDate && { date: { lte: new Date(`${endDate}T23:59:59Z`) } }),
-      ...(company_id && { companyId: company_id }),
+      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
     },
     orderBy: [{ userId: 'asc' }, { date: 'asc' }],
   })
@@ -404,11 +410,12 @@ const deletePlanning = async (id) => {
 const deletePlanningByUserAndDate = async (userId, date) => {
   const dateObj = new Date(`${date}T00:00:00Z`)
 
-  return await prisma.planning.delete({
+  return await prisma.planning.deleteMany({
     where: {
-      userId_date: {
-        userId,
-        date: dateObj,
+      userId,
+      date: {
+        gte: dateObj,
+        lt: new Date(dateObj.getTime() + 24 * 60 * 60 * 1000),
       },
     },
   })
@@ -523,7 +530,7 @@ const getSessionActionHistory = async (phone, company_id = null, limit = 50) => 
   return await prisma.sessionAction.findMany({
     where: {
       phone,
-      ...(company_id && { companyId: company_id }),
+      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
     },
     orderBy: { createdAt: 'desc' },
     take: limit,
@@ -534,7 +541,7 @@ const getFailedSessionActions = async (company_id = null, limit = 100) => {
   return await prisma.sessionAction.findMany({
     where: {
       success: false,
-      ...(company_id && { companyId: company_id }),
+      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
     },
     orderBy: { createdAt: 'desc' },
     take: limit,
