@@ -264,6 +264,11 @@ const createUser = async (
 }
 
 const updateUser = async (id, updates) => {
+  const userId = typeof id === 'string' ? parseInt(id, 10) : id
+  if (!Number.isInteger(userId)) {
+    throw new Error('Invalid user id')
+  }
+
   const fieldMap = {
     username: 'username',
     name: 'name',
@@ -286,14 +291,19 @@ const updateUser = async (id, updates) => {
   }
 
   return await prisma.user.update({
-    where: { id },
+    where: { id: userId },
     data,
   })
 }
 
 const deleteUser = async (id) => {
+  const userId = typeof id === 'string' ? parseInt(id, 10) : id
+  if (!Number.isInteger(userId)) {
+    throw new Error('Invalid user id')
+  }
+
   return await prisma.user.update({
-    where: { id },
+    where: { id: userId },
     data: { isActive: false },
   })
 }
