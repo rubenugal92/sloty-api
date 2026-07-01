@@ -488,6 +488,8 @@ const getCompanyByWhatsappPhoneId = async (phone_number_id) => {
 const updateCompany = async (id, updates) => {
   const fieldMap = {
     name: 'name',
+    company_code: 'companyCode',
+    companyCode: 'companyCode',
     contact_email: 'contactEmail',
     contactEmail: 'contactEmail',
     phone: 'phone',
