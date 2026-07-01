@@ -310,16 +310,22 @@ const getUserByUsername = async (username) => {
 // =====================================================================
 
 const getPlanningByUserAndDate = async (userId, date, company_id = null) => {
+  const userIdInt = typeof userId === 'string' ? parseInt(userId, 10) : userId
+  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  if (!Number.isInteger(userIdInt)) {
+    throw new Error('Invalid userId')
+  }
+
   const dateObj = new Date(`${date}T00:00:00Z`)
 
   return await prisma.planning.findFirst({
     where: {
-      userId,
+      userId: userIdInt,
       date: {
         gte: dateObj,
         lt: new Date(dateObj.getTime() + 24 * 60 * 60 * 1000),
       },
-      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
+      ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
     },
   })
 }
@@ -330,12 +336,18 @@ const getPlanningByUser = async (
   endDate = null,
   company_id = null
 ) => {
+  const userIdInt = typeof userId === 'string' ? parseInt(userId, 10) : userId
+  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  if (!Number.isInteger(userIdInt)) {
+    throw new Error('Invalid userId')
+  }
+
   return await prisma.planning.findMany({
     where: {
-      userId,
+      userId: userIdInt,
       ...(startDate && { date: { gte: new Date(`${startDate}T00:00:00Z`) } }),
       ...(endDate && { date: { lte: new Date(`${endDate}T23:59:59Z`) } }),
-      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
+      ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
     },
   })
 }
@@ -360,12 +372,18 @@ const createPlanning = async (
   start_time = null,
   end_time = null
 ) => {
+  const userIdInt = typeof userId === 'string' ? parseInt(userId, 10) : userId
+  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  if (!Number.isInteger(userIdInt)) {
+    throw new Error('Invalid userId')
+  }
+
   const dateObj = new Date(`${date}T00:00:00Z`)
 
   return await prisma.planning.upsert({
     where: {
       userId_date: {
-        userId,
+        userId: userIdInt,
         date: dateObj,
       },
     },
@@ -376,11 +394,11 @@ const createPlanning = async (
       endTime: end_time,
     },
     create: {
-      userId,
+      userId: userIdInt,
       date: dateObj,
       type,
       notes,
-      companyId: company_id,
+      companyId: companyIdInt,
       startTime: start_time,
       endTime: end_time,
     },
