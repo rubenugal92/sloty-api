@@ -732,6 +732,8 @@ module.exports = {
   getUserByUsername,
   getPlanningByUserAndDate,
   getPlanningByUser,
+  getPlanningByUserAndDateRange,
+  getPlanningById,
   getAvailableUsersForDate,
   getAllPlanning,
   createPlanning,
