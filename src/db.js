@@ -522,7 +522,7 @@ const updateCompany = async (id, updates) => {
   }
 
   return await prisma.company.update({
-    where: { id },
+    where: { id: companyId },
     data,
   })
 }
