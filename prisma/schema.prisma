@@ -84,6 +84,10 @@ model Company {
   whatsappPhoneNumberId  String?
   whatsappAccessToken    String?
   whatsappDisplayNumber  String?
+  whatsappBusinessAccountId String?
+  whatsappBusinessId     String?
+  whatsappConnectedAt    DateTime?
+  whatsappConnectionStatus String? @default("disconnected")
 
   users        User[]
   appointments Appointment[]

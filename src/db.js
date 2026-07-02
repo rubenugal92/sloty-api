@@ -588,6 +588,10 @@ const createCompany = async (
       whatsappPhoneNumberId: whatsapp.phone_number_id || null,
       whatsappAccessToken: whatsapp.access_token || null,
       whatsappDisplayNumber: whatsapp.display_number || null,
+      whatsappBusinessAccountId: whatsapp.whatsapp_business_account_id || null,
+      whatsappBusinessId: whatsapp.business_id || null,
+      whatsappConnectedAt: whatsapp.connected_at || null,
+      whatsappConnectionStatus: whatsapp.connection_status || 'connected',
     },
   })
 }
@@ -643,6 +647,14 @@ const updateCompany = async (id, updates) => {
     whatsappAccessToken: 'whatsappAccessToken',
     whatsapp_display_number: 'whatsappDisplayNumber',
     whatsappDisplayNumber: 'whatsappDisplayNumber',
+    whatsapp_business_account_id: 'whatsappBusinessAccountId',
+    whatsappBusinessAccountId: 'whatsappBusinessAccountId',
+    whatsapp_business_id: 'whatsappBusinessId',
+    whatsappBusinessId: 'whatsappBusinessId',
+    whatsapp_connected_at: 'whatsappConnectedAt',
+    whatsappConnectedAt: 'whatsappConnectedAt',
+    whatsapp_connection_status: 'whatsappConnectionStatus',
+    whatsappConnectionStatus: 'whatsappConnectionStatus',
   }
 
   const data = {}
@@ -661,6 +673,26 @@ const updateCompany = async (id, updates) => {
   return await prisma.company.update({
     where: { id: companyId },
     data,
+  })
+}
+
+const saveCompanyWhatsappConfig = async (companyId, config) => {
+  const companyIdInt = typeof companyId === 'string' ? parseInt(companyId, 10) : companyId
+  if (!Number.isInteger(companyIdInt)) {
+    throw new Error('Invalid company id')
+  }
+
+  return await prisma.company.update({
+    where: { id: companyIdInt },
+    data: {
+      whatsappPhoneNumberId: config.phone_number_id || null,
+      whatsappAccessToken: config.access_token || null,
+      whatsappDisplayNumber: config.display_number || null,
+      whatsappBusinessAccountId: config.whatsapp_business_account_id || null,
+      whatsappBusinessId: config.business_id || null,
+      whatsappConnectedAt: config.connected_at || new Date(),
+      whatsappConnectionStatus: config.connection_status || 'connected',
+    },
   })
 }
 
@@ -747,6 +779,7 @@ module.exports = {
   getCompanyByCode,
   getCompanyByWhatsappPhoneId,
   updateCompany,
+  saveCompanyWhatsappConfig,
   logSessionAction,
   getSessionActionHistory,
   getFailedSessionActions,

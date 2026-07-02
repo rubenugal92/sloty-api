@@ -34,15 +34,25 @@ const {
   getCompanyById,
   getCompanyByCode,
   getCompanyByWhatsappPhoneId,
-  updateCompany
+  updateCompany,
+  saveCompanyWhatsappConfig
 } = require('./db');
 
 const { sendMessage } = require('./whatsapp');
 const { handleMessage } = require('./bot');
+const {
+  buildMetaOAuthUrl,
+  buildMetaOAuthState,
+  parseMetaOAuthState,
+  exchangeCodeForToken,
+  exchangeForLongLivedToken,
+  getWhatsAppBusinessConfig,
+} = require('./whatsappOAuth');
 
 const app = express();
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // ----------------- Helpers: format responses to API contract (snake_case) -----------------
 const toSnake = (str) => str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)
@@ -228,6 +238,103 @@ app.post('/webhook', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.sendStatus(200);
+  }
+});
+
+// ===================== WHATSAPP META OAUTH =====================
+
+const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:5173';
+
+app.get('/api/whatsapp/oauth/connect', verifyToken, async (req, res) => {
+  try {
+    const requestedCompanyId = req.query.company_id ? parseInt(req.query.company_id, 10) : null;
+    let companyId = requestedCompanyId || req.user?.company_id;
+
+    if (req.user?.role === 'superadmin' && !companyId) {
+      return res.status(400).json({ error: 'company_id is required for superadmin users' });
+    }
+
+    const company = await getCompanyById(companyId);
+    if (!company) {
+      return res.status(404).json({ error: 'Company not found' });
+    }
+
+    const clientId = process.env.META_APP_ID;
+    const redirectUri = process.env.META_REDIRECT_URI;
+    if (!clientId || !redirectUri) {
+      return res.status(500).json({ error: 'META_APP_ID and META_REDIRECT_URI must be configured' });
+    }
+
+    const state = buildMetaOAuthState({ companyId, userId: req.user.id });
+    const url = buildMetaOAuthUrl({
+      clientId,
+      redirectUri,
+      state,
+    });
+
+    res.json({ url, company_id: companyId, state });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error creating WhatsApp OAuth URL' });
+  }
+});
+
+app.get('/api/whatsapp/oauth/callback', async (req, res) => {
+  try {
+    const { code, state, error, error_description } = req.query;
+
+    if (error) {
+      const message = error_description || error;
+      return res.redirect(`${FRONTEND_URL}/empresas?whatsapp=error&message=${encodeURIComponent(message)}`);
+    }
+
+    if (!code || !state) {
+      return res.redirect(`${FRONTEND_URL}/empresas?whatsapp=error&message=${encodeURIComponent('Missing OAuth code or state')}`);
+    }
+
+    const { companyId } = parseMetaOAuthState(state);
+    if (!companyId) {
+      return res.redirect(`${FRONTEND_URL}/empresas?whatsapp=error&message=${encodeURIComponent('Invalid OAuth state')}`);
+    }
+
+    const clientId = process.env.META_APP_ID;
+    const clientSecret = process.env.META_APP_SECRET;
+    const redirectUri = process.env.META_REDIRECT_URI;
+
+    if (!clientId || !clientSecret || !redirectUri) {
+      return res.redirect(`${FRONTEND_URL}/empresas?whatsapp=error&message=${encodeURIComponent('Meta OAuth env vars are not configured')}`);
+    }
+
+    const tokenPayload = await exchangeCodeForToken({ code, redirectUri, clientId, clientSecret });
+    const shortLivedToken = tokenPayload?.access_token;
+    if (!shortLivedToken) {
+      throw new Error('Meta did not return an access token');
+    }
+
+    const longLived = await exchangeForLongLivedToken({
+      clientId,
+      clientSecret,
+      shortLivedToken,
+    });
+
+    const accessToken = longLived?.access_token || shortLivedToken;
+    const config = await getWhatsAppBusinessConfig(accessToken);
+
+    await saveCompanyWhatsappConfig(companyId, {
+      phone_number_id: config.phoneNumberId,
+      access_token: accessToken,
+      display_number: config.displayNumber,
+      whatsapp_business_account_id: config.whatsappBusinessAccountId,
+      business_id: config.businessId,
+      connected_at: new Date(),
+      connection_status: 'connected',
+    });
+
+    res.redirect(`${FRONTEND_URL}/empresas?whatsapp=connected`);
+  } catch (err) {
+    console.error(err);
+    const message = encodeURIComponent(err.message || 'Unable to complete WhatsApp connection');
+    res.redirect(`${FRONTEND_URL}/empresas?whatsapp=error&message=${message}`);
   }
 });
 
@@ -751,10 +858,19 @@ const verifySuperAdmin = (req, res, next) => {
 // ===================== COMPANIES ENDPOINTS (SUPERADMIN ONLY) =====================
 
 // Listar todas las empresas
-app.get('/api/companies', verifyToken, verifySuperAdmin, async (req, res) => {
+app.get('/api/companies', verifyToken, async (req, res) => {
   try {
-    const companies = await getAllCompanies();
-    res.json(companies.map(formatCompany));
+    if (req.user?.role === 'superadmin') {
+      const companies = await getAllCompanies();
+      return res.json(companies.map(formatCompany));
+    }
+
+    if (req.user?.company_id) {
+      const company = await getCompanyById(req.user.company_id);
+      return res.json(company ? [formatCompany(company)] : []);
+    }
+
+    return res.json([]);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error fetching companies' });
@@ -791,15 +907,19 @@ app.post('/api/companies', verifyToken, verifySuperAdmin, async (req, res) => {
 });
 
 // Obtener empresa por ID
-app.get('/api/companies/:id', verifyToken, verifySuperAdmin, async (req, res) => {
+app.get('/api/companies/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const company = await getCompanyById(id);
-    
+
     if (!company) {
       return res.status(404).json({ error: 'Company not found' });
     }
-    
+
+    if (req.user?.role !== 'superadmin' && req.user?.company_id !== company.id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
     res.json(formatCompany(company));
   } catch (err) {
     console.error(err);
