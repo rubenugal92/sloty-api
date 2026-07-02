@@ -5,7 +5,7 @@ const META_BASE_URL = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
 // Official Meta-hosted entry point used by the WhatsApp Business Platform Embedded Signup flow.
 const META_OAUTH_URL = 'https://www.facebook.com/v21.0/dialog/oauth';
 
-const buildMetaOAuthUrl = ({ clientId, redirectUri, state, scopes = ['business_management', 'whatsapp_business_management', 'whatsapp_business_messaging'] }) => {
+const buildMetaOAuthUrl = ({ clientId, redirectUri, state, scopes = ['whatsapp_business_management', 'whatsapp_business_messaging'] }) => {
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,

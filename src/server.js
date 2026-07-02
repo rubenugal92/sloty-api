@@ -1,6 +1,36 @@
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+
+const loadEnvFile = () => {
+  const envPath = path.resolve(__dirname, '..', '.env');
+  if (!fs.existsSync(envPath)) return;
+
+  const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    const separatorIndex = trimmed.indexOf('=');
+    if (separatorIndex === -1) continue;
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    let value = trimmed.slice(separatorIndex + 1).trim();
+
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+
+    if (!process.env[key]) {
+      process.env[key] = value;
+    }
+  }
+};
+
+loadEnvFile();
+
 const {
   getAvailableSlots,
   bookAppointment,
@@ -247,6 +277,7 @@ app.post('/webhook', async (req, res) => {
 // ===================== WHATSAPP META OAUTH =====================
 
 const FRONTEND_URL = process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:5173';
+const DEFAULT_REDIRECT_URI = process.env.META_REDIRECT_URI || process.env.REDIRECT_URI || `${process.env.APP_URL || 'http://localhost:3000'}/api/whatsapp/oauth/callback`;
 
 app.get('/api/whatsapp/oauth/connect', verifyToken, async (req, res) => {
   try {
@@ -262,10 +293,10 @@ app.get('/api/whatsapp/oauth/connect', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Company not found' });
     }
 
-    const clientId = process.env.META_APP_ID;
-    const redirectUri = process.env.META_REDIRECT_URI;
+    const clientId = process.env.META_APP_ID || process.env.FACEBOOK_APP_ID;
+    const redirectUri = process.env.META_REDIRECT_URI || DEFAULT_REDIRECT_URI;
     if (!clientId || !redirectUri) {
-      return res.status(500).json({ error: 'Meta App ID and Redirect URI must be configured for this company' });
+      return res.status(500).json({ error: 'Meta App ID and Redirect URI must be configured in the backend environment (.env)' });
     }
 
     const state = buildMetaOAuthState({ companyId, userId: req.user.id });
@@ -301,12 +332,12 @@ app.get('/api/whatsapp/oauth/callback', async (req, res) => {
     }
 
     const company = await getCompanyById(companyId);
-    const clientId = process.env.META_APP_ID;
-    const clientSecret = process.env.META_APP_SECRET;
-    const redirectUri = process.env.META_REDIRECT_URI;
+    const clientId = process.env.META_APP_ID || process.env.FACEBOOK_APP_ID;
+    const clientSecret = process.env.META_APP_SECRET || process.env.FACEBOOK_APP_SECRET;
+    const redirectUri = process.env.META_REDIRECT_URI || DEFAULT_REDIRECT_URI;
 
     if (!clientId || !clientSecret || !redirectUri) {
-      return res.redirect(`${FRONTEND_URL}/empresas?whatsapp=error&message=${encodeURIComponent('Meta App credentials are not configured for this company')}`);
+      return res.redirect(`${FRONTEND_URL}/empresas?whatsapp=error&message=${encodeURIComponent('Meta App credentials are not configured in the backend environment (.env)')}`);
     }
 
     const tokenPayload = await exchangeCodeForToken({ code, redirectUri, clientId, clientSecret });
