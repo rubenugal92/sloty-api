@@ -354,6 +354,7 @@ app.get('/api/whatsapp/oauth/callback', async (req, res) => {
 
     const accessToken = longLived?.access_token || shortLivedToken;
     const config = await getWhatsAppBusinessConfig(accessToken);
+    console.log('META CONFIG:', config);
 
     await saveCompanyWhatsappConfig(companyId, {
       phone_number_id: config.phoneNumberId,
