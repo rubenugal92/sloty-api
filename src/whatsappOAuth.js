@@ -82,30 +82,12 @@ const exchangeForLongLivedToken = async ({ clientId, clientSecret, shortLivedTok
 };
 
 const getWhatsAppBusinessConfig = async (accessToken) => {
-  const me = await requestJson(`${META_BASE_URL}/me?fields=id,name&access_token=${encodeURIComponent(accessToken)}`);
-  const businessesPayload = await requestJson(`${META_BASE_URL}/me/businesses?fields=id,name,timezone_id&access_token=${encodeURIComponent(accessToken)}`);
-  const business = businessesPayload?.data?.[0] || null;
-
-  let whatsappBusinessAccount = null;
-  let phoneNumber = null;
-
-  if (business?.id) {
-    const accountsPayload = await requestJson(`${META_BASE_URL}/${business.id}/whatsapp_business_accounts?fields=id,name,timezone_id&access_token=${encodeURIComponent(accessToken)}`);
-    whatsappBusinessAccount = accountsPayload?.data?.[0] || null;
-  }
-
-  if (whatsappBusinessAccount?.id) {
-    const phoneNumbersPayload = await requestJson(`${META_BASE_URL}/${whatsappBusinessAccount.id}/phone_numbers?fields=id,display_phone_number,verified_name&access_token=${encodeURIComponent(accessToken)}`);
-    phoneNumber = phoneNumbersPayload?.data?.[0] || null;
-  }
+  const me = await requestJson(
+    `${META_BASE_URL}/me?fields=id,name&access_token=${encodeURIComponent(accessToken)}`
+  );
 
   return {
-    meId: me?.id || null,
-    businessId: business?.id || null,
-    businessName: business?.name || null,
-    whatsappBusinessAccountId: whatsappBusinessAccount?.id || null,
-    displayNumber: phoneNumber?.display_phone_number || null,
-    phoneNumberId: phoneNumber?.id || null,
+    meId: me?.id || null
   };
 };
 
