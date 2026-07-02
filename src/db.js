@@ -592,6 +592,8 @@ const createCompany = async (
       whatsappBusinessId: whatsapp.business_id || null,
       whatsappConnectedAt: whatsapp.connected_at || null,
       whatsappConnectionStatus: whatsapp.connection_status || 'connected',
+      tokenUpdatedAt: whatsapp.token_updated_at || null,
+      tokenExpiresAt: whatsapp.token_expires_at || null,
     },
   })
 }
@@ -655,6 +657,10 @@ const updateCompany = async (id, updates) => {
     whatsappConnectedAt: 'whatsappConnectedAt',
     whatsapp_connection_status: 'whatsappConnectionStatus',
     whatsappConnectionStatus: 'whatsappConnectionStatus',
+    token_updated_at: 'tokenUpdatedAt',
+    tokenUpdatedAt: 'tokenUpdatedAt',
+    token_expires_at: 'tokenExpiresAt',
+    tokenExpiresAt: 'tokenExpiresAt',
   }
 
   const data = {}

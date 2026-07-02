@@ -2,6 +2,7 @@ const crypto = require('crypto');
 
 const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v21.0';
 const META_BASE_URL = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
+// Official Meta-hosted entry point used by the WhatsApp Business Platform Embedded Signup flow.
 const META_OAUTH_URL = 'https://www.facebook.com/v21.0/dialog/oauth';
 
 const buildMetaOAuthUrl = ({ clientId, redirectUri, state, scopes = ['business_management', 'whatsapp_business_management', 'whatsapp_business_messaging'] }) => {

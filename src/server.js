@@ -125,6 +125,9 @@ const formatCompany = (c) => {
     whatsapp_phone_number_id: c.whatsappPhoneNumberId || c.whatsapp_phone_number_id || null,
     whatsapp_access_token: c.whatsappAccessToken || c.whatsapp_access_token || null,
     whatsapp_display_number: c.whatsappDisplayNumber || c.whatsapp_display_number || null,
+    whatsapp_connection_status: c.whatsappConnectionStatus || c.whatsapp_connection_status || 'disconnected',
+    token_updated_at: c.tokenUpdatedAt || c.token_updated_at || null,
+    token_expires_at: c.tokenExpiresAt || c.token_expires_at || null,
     created_at: c.createdAt || null,
     updated_at: c.updatedAt || null,
   }
@@ -262,7 +265,7 @@ app.get('/api/whatsapp/oauth/connect', verifyToken, async (req, res) => {
     const clientId = process.env.META_APP_ID;
     const redirectUri = process.env.META_REDIRECT_URI;
     if (!clientId || !redirectUri) {
-      return res.status(500).json({ error: 'META_APP_ID and META_REDIRECT_URI must be configured' });
+      return res.status(500).json({ error: 'Meta App ID and Redirect URI must be configured for this company' });
     }
 
     const state = buildMetaOAuthState({ companyId, userId: req.user.id });
@@ -297,12 +300,13 @@ app.get('/api/whatsapp/oauth/callback', async (req, res) => {
       return res.redirect(`${FRONTEND_URL}/empresas?whatsapp=error&message=${encodeURIComponent('Invalid OAuth state')}`);
     }
 
+    const company = await getCompanyById(companyId);
     const clientId = process.env.META_APP_ID;
     const clientSecret = process.env.META_APP_SECRET;
     const redirectUri = process.env.META_REDIRECT_URI;
 
     if (!clientId || !clientSecret || !redirectUri) {
-      return res.redirect(`${FRONTEND_URL}/empresas?whatsapp=error&message=${encodeURIComponent('Meta OAuth env vars are not configured')}`);
+      return res.redirect(`${FRONTEND_URL}/empresas?whatsapp=error&message=${encodeURIComponent('Meta App credentials are not configured for this company')}`);
     }
 
     const tokenPayload = await exchangeCodeForToken({ code, redirectUri, clientId, clientSecret });

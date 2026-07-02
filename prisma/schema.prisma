@@ -88,6 +88,8 @@ model Company {
   whatsappBusinessId     String?
   whatsappConnectedAt    DateTime?
   whatsappConnectionStatus String? @default("disconnected")
+  tokenUpdatedAt         DateTime?
+  tokenExpiresAt         DateTime?
 
   users        User[]
   appointments Appointment[]
