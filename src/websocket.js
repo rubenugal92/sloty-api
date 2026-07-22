@@ -56,19 +56,25 @@ const broadcastAppointmentCreated = (appointment, targetUserIds = null) => {
   if (targetUserIds) {
     // Send to specific users (can be array or single ID)
     const ids = Array.isArray(targetUserIds) ? targetUserIds : [targetUserIds];
+    console.log(`📤 Broadcasting appointment_created to users: ${ids.join(', ')}`);
     ids.forEach(userId => {
       const userClients = clients.get(String(userId));
       if (userClients) {
+        console.log(`  ✅ User ${userId} has ${userClients.size} connection(s)`);
         userClients.forEach((ws) => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(message);
+            console.log(`  📨 Message sent to user ${userId}`);
           }
         });
+      } else {
+        console.log(`  ❌ User ${userId} not connected`);
       }
     });
   } else {
     // Broadcast to all connected clients
-    clients.forEach((userClients) => {
+    console.log(`📤 Broadcasting appointment_created to ALL users`);
+    clients.forEach((userClients, userId) => {
       userClients.forEach((ws) => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(message);

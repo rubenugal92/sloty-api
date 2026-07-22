@@ -508,6 +508,7 @@ app.post('/api/appointments', verifyToken, async (req, res) => {
       user_id,
       ...companyUsers.map(u => u.id).filter(id => id !== user_id)
     ];
+    console.log(`💾 Appointment created. Broadcasting to users:`, targetUserIds);
     broadcastAppointmentCreated(formatAppointment(appointment), targetUserIds);
     
     res.status(201).json(formatAppointment(appointment));
@@ -573,11 +574,17 @@ app.delete('/api/appointments/:id', verifyToken, async (req, res) => {
 
 app.get('/api/slots/:date', verifyToken, async (req, res) => {
   try {
-    const { date } = req.params
+    let { date } = req.params
     const { user_id } = req.query
 
     if (!date || date === 'undefined') {
       return res.status(400).json({ error: 'Invalid date' })
+    }
+
+    // Convertir DD-MM-YYYY a YYYY-MM-DD si es necesario
+    if (date.includes('-') && /^\d{2}-\d{2}-\d{4}$/.test(date)) {
+      const [day, month, year] = date.split('-')
+      date = `${year}-${month}-${day}`
     }
 
     const slots = await getAvailableSlots(date, user_id ? parseInt(user_id) : null)

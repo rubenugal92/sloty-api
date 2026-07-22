@@ -43,10 +43,10 @@ const getAvailableSlots = async (date, userId = null) => {
     let minHour = 24
     let maxHour = 0
     plannings.forEach(p => {
-      const start = parseInt(p.startTime?.slice(0, 2), 10) || 9
-      const end = parseInt(p.endTime?.slice(0, 2), 10) || 20
-      minHour = Math.min(minHour, start)
-      maxHour = Math.max(maxHour, end)
+      const pStart = parseInt(p.startTime?.slice(0, 2), 10) || 9
+      const pEnd = parseInt(p.endTime?.slice(0, 2), 10) || 20
+      minHour = Math.min(minHour, pStart)
+      maxHour = Math.max(maxHour, pEnd)
     })
     
     startHourLocal = minHour === 24 ? 9 : minHour
