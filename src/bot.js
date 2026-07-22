@@ -217,12 +217,18 @@ const parseTime = (text) => {
 const matchUserChoice = (text, users) => {
   const t = norm(text);
 
+  // Match por número
   const numMatch = t.match(/^(\d{1,2})$/);
   if (numMatch) {
     const idx = parseInt(numMatch[1], 10) - 1;
-    if (idx >= 0 && idx < users.length) return users[idx];
+    if (idx >= 0 && idx < users.length) {
+      const user = users[idx];
+      // Retornar objeto limpio con id, name
+      return { id: user.id, name: user.name, specialties: user.specialties };
+    }
   }
 
+  // Match por nombre
   const candidates = users.filter(u => {
     const name = norm(u.name);
     if (!name) return false;
@@ -231,7 +237,11 @@ const matchUserChoice = (text, users) => {
     return name.split(/\s+/).some(p => p.length >= 3 && t.includes(p));
   });
 
-  return candidates.length === 1 ? candidates[0] : null;
+  if (candidates.length === 1) {
+    const user = candidates[0];
+    return { id: user.id, name: user.name, specialties: user.specialties };
+  }
+  return null;
 };
 
 // =====================================================================
@@ -503,6 +513,14 @@ const handleSelectingUser = async (from, text, companyId, session) => {
       await reply(from, M.invalidChoice());
       return;
     }
+  }
+
+  // 🔥 Revalidar que usuario sigue disponible (por si cambió algo entre pasos)
+  const currentlyAvailable = await getAvailableUsersForDateAndTime(session.date, session.time, companyId);
+  const userStillAvailable = currentlyAvailable.find(u => u.id === user.id);
+  if (!userStillAvailable) {
+    await reply(from, M.noSlots(user.name, formatReadableDate(session.date)));
+    return;
   }
 
   const planning = await getPlanningByUserAndDate(user.id, session.date, companyId);
