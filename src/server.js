@@ -3,6 +3,8 @@ const path = require('path');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const http = require('http');
+const { initWebSocketServer, broadcastAppointmentCreated, broadcastAppointmentDeleted } = require('./websocket');
 
 const loadEnvFile = () => {
   const envPath = path.resolve(__dirname, '..', '.env');
@@ -491,6 +493,10 @@ app.post('/api/appointments', verifyToken, async (req, res) => {
 
     const targetCompanyId = req.user.role === 'superadmin' ? company_id || req.user.company_id : req.user.company_id;
     const appointment = await bookAppointment(phone, datetime, service, user_id, notes, targetCompanyId, customer_name);
+    
+    // Broadcast WebSocket event
+    broadcastAppointmentCreated(formatAppointment(appointment), user_id);
+    
     res.status(201).json(formatAppointment(appointment));
   } catch (err) {
     console.error(err);
@@ -531,7 +537,12 @@ app.delete('/api/appointments/:id', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Appointment not found' });
     }
 
+    const appointmentId = parseInt(id, 10);
     const deleted = await deleteAppointment(id);
+    
+    // Broadcast WebSocket event
+    broadcastAppointmentDeleted(appointmentId, appointment.userId);
+    
     res.json({ message: 'Appointment deleted', appointment: formatAppointment(deleted) });
   } catch (err) {
     console.error(err);
@@ -989,8 +1000,12 @@ app.put('/api/companies/:id', verifyToken, verifySuperAdmin, async (req, res) =>
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+const server = http.createServer(app);
+initWebSocketServer(server);
+
+server.listen(PORT, () => {
   console.log(`🚀 Server running on ${PORT}`);
+  console.log(`📡 WebSocket available at ws://localhost:${PORT}/ws`);
 });
 
 module.exports = app;
