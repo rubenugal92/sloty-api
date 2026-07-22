@@ -515,14 +515,8 @@ const handleSelectingUser = async (from, text, companyId, session) => {
     }
   }
 
-  // 🔥 Revalidar que usuario sigue disponible (por si cambió algo entre pasos)
-  const currentlyAvailable = await getAvailableUsersForDateAndTime(session.date, session.time, companyId);
-  const userStillAvailable = currentlyAvailable.find(u => u.id === user.id);
-  if (!userStillAvailable) {
-    await reply(from, M.noSlots(user.name, formatReadableDate(session.date)));
-    return;
-  }
-
+  // ✅ Usuario ya está en session.availableUsers = está validado por fecha+hora+horario
+  // No hace falta revalidar, solo verificar vacation/sick
   const planning = await getPlanningByUserAndDate(user.id, session.date, companyId);
   if (planning && (planning.type === 'vacation' || planning.type === 'sick')) {
     await reply(from, M.noSlots(user.name, formatReadableDate(session.date)));

@@ -53,9 +53,12 @@ const getAvailableSlots = async (date, userId = null) => {
     endHourLocal = maxHour === 0 ? 20 : maxHour
   }
 
-  // Generate slots in local time (HH:MM format)
+  // Generate slots in local time (HH:MM format) - every 15 minutes
   for (let h = startHourLocal; h < endHourLocal; h++) {
     slots.push(`${String(h).padStart(2, '0')}:00`)
+    slots.push(`${String(h).padStart(2, '0')}:15`)
+    slots.push(`${String(h).padStart(2, '0')}:30`)
+    slots.push(`${String(h).padStart(2, '0')}:45`)
   }
 
   // Exclude already booked slots
