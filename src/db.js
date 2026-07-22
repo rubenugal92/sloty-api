@@ -121,10 +121,17 @@ const getAvailableUsersForDateAndTime = async (date, time, company_id = null) =>
     const planning = user.plannings?.[0] // asume 1 planning por día
     if (!planning) return false
     
-    const startHour = planning.startTime ? parseInt(planning.startTime.slice(0, 2), 10) : 0
-    const endHour = planning.endTime ? parseInt(planning.endTime.slice(0, 2), 10) : 24
+    // Parsear startTime y endTime (formato "HH:MM")
+    const [startHour, startMin] = planning.startTime ? planning.startTime.split(':').map(Number) : [0, 0]
+    const [endHour, endMin] = planning.endTime ? planning.endTime.split(':').map(Number) : [24, 0]
     
-    return hours >= startHour && hours < endHour
+    // Convertir a minutos desde medianoche para comparar
+    const startTotalMin = startHour * 60 + startMin
+    const endTotalMin = endHour * 60 + endMin
+    const requestedTotalMin = hours * 60 + minutes
+    
+    // Verificar que hora solicitada está dentro del rango
+    return requestedTotalMin >= startTotalMin && requestedTotalMin < endTotalMin
   })
   
   // Filtrar: excluir usuarios que tengan cita en esa hora exacta
