@@ -72,6 +72,9 @@ const {
   saveCompanyWhatsappConfig
 } = require('./db');
 
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
 const { sendMessage } = require('./whatsapp');
 const { handleMessage } = require('./bot');
 const {
