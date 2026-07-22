@@ -23,6 +23,34 @@ const getAvailableSlots = async (date, userId = null) => {
     if (planning && planning.endTime) {
       endHourLocal = parseInt(planning.endTime.slice(0, 2), 10)
     }
+  } else {
+    // Sin userId: buscar rango mínimo/máximo de plannings ese día
+    const plannings = await prisma.planning.findMany({
+      where: {
+        date: {
+          gte: start,
+          lt: new Date(start.getTime() + 24 * 60 * 60 * 1000),
+        },
+        type: 'work',
+        user: { isActive: true },
+      },
+      select: { startTime: true, endTime: true },
+    })
+    
+    if (plannings.length === 0) return [] // No hay trabajadores ese día
+    
+    // Encontrar rango mínimo-máximo
+    let minHour = 24
+    let maxHour = 0
+    plannings.forEach(p => {
+      const start = parseInt(p.startTime?.slice(0, 2), 10) || 9
+      const end = parseInt(p.endTime?.slice(0, 2), 10) || 20
+      minHour = Math.min(minHour, start)
+      maxHour = Math.max(maxHour, end)
+    })
+    
+    startHourLocal = minHour === 24 ? 9 : minHour
+    endHourLocal = maxHour === 0 ? 20 : maxHour
   }
 
   // Generate slots in local time (HH:MM format)
@@ -40,16 +68,36 @@ const getAvailableSlots = async (date, userId = null) => {
       status: { not: 'cancelled' },
       ...(userId && { userId }),
     },
-    select: { datetime: true },
+    select: { datetime: true, userId: true },
   })
 
-  const booked = appointments.map(a => {
-    const utcTime = new Date(a.datetime)
-    const localTime = new Date(utcTime.getTime() + 2 * 60 * 60 * 1000)
-    return localTime.toISOString().slice(11, 16)
-  })
-
-  return slots.filter(s => !booked.includes(s))
+  if (userId) {
+    // Para un usuario específico: excluir sus citas
+    const booked = appointments.map(a => {
+      const utcTime = new Date(a.datetime)
+      const localTime = new Date(utcTime.getTime() + 2 * 60 * 60 * 1000)
+      return localTime.toISOString().slice(11, 16)
+    })
+    return slots.filter(s => !booked.includes(s))
+  } else {
+    // Sin userId: retornar slots donde NO TODOS los empleados estén ocupados
+    // Obtener todos empleados disponibles ese día
+    const availableUsers = await getAvailableUsersForDate(date)
+    if (availableUsers.length === 0) return []
+    
+    // Para cada slot, verificar si hay AL MENOS UN empleado disponible
+    const slotsWithAvailability = []
+    for (const slot of slots) {
+      for (const user of availableUsers) {
+        const available = await getAvailableUsersForDateAndTime(date, slot, user.companyId)
+        if (available.find(u => u.id === user.id)) {
+          slotsWithAvailability.push(slot)
+          break // Al menos uno disponible, pasar al siguiente slot
+        }
+      }
+    }
+    return slotsWithAvailability
+  }
 }
 
 const getAvailableUsersForDate = async (date, company_id = null) => {
