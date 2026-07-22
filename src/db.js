@@ -87,6 +87,7 @@ const getAvailableUsersForDateAndTime = async (date, time, company_id = null) =>
   // Buscar usuarios que:
   // 1. Tengan planning (trabajo) en esa fecha
   // 2. No tengan cita reservada en esa hora exacta
+  // 3. Estén dentro de su horario de trabajo (startTime <= hora < endTime)
   const allUsers = await prisma.user.findMany({
     where: {
       isActive: true,
@@ -101,7 +102,29 @@ const getAvailableUsersForDateAndTime = async (date, time, company_id = null) =>
       },
       ...(companyIdInt !== null && companyIdInt !== undefined && Number.isInteger(companyIdInt) && { companyId: companyIdInt }),
     },
+    include: {
+      plannings: {
+        where: {
+          date: {
+            gte: dateObj,
+            lt: new Date(dateObj.getTime() + 24 * 60 * 60 * 1000),
+          },
+          type: 'work',
+        },
+      },
+    },
     orderBy: { name: 'asc' },
+  })
+  
+  // Filtrar por horario: solo usuarios cuyo planning cubre la hora solicitada
+  const usersInTimeRange = allUsers.filter(user => {
+    const planning = user.plannings?.[0] // asume 1 planning por día
+    if (!planning) return false
+    
+    const startHour = planning.startTime ? parseInt(planning.startTime.slice(0, 2), 10) : 0
+    const endHour = planning.endTime ? parseInt(planning.endTime.slice(0, 2), 10) : 24
+    
+    return hours >= startHour && hours < endHour
   })
   
   // Filtrar: excluir usuarios que tengan cita en esa hora exacta
@@ -114,7 +137,7 @@ const getAvailableUsersForDateAndTime = async (date, time, company_id = null) =>
   })
   
   const bookedUserIds = new Set(bookedAppointments.map(a => a.userId))
-  return allUsers.filter(u => !bookedUserIds.has(u.id))
+  return usersInTimeRange.filter(u => !bookedUserIds.has(u.id))
 }
 
 const getLeastBusyUserForDateAndTime = async (date, time, users, company_id = null) => {
