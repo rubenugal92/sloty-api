@@ -55,6 +55,8 @@ const {
   getPlanningByUser,
   getPlanningByUserAndDateRange,
   getAvailableUsersForDate,
+  getAvailableUsersForDateAndTime,
+  getLeastBusyUserForDateAndTime,
   getAllPlanning,
   createPlanning,
   updatePlanning,

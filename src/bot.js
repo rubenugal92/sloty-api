@@ -15,7 +15,8 @@ const reply = async (from, text) => {
 const {
   getAvailableSlots,
   bookAppointment,
-  getAvailableUsersForDate,
+  getAvailableUsersForDateAndTime,
+  getLeastBusyUserForDateAndTime,
   getPlanningByUserAndDate,
   getAppointmentByCustomId,
   cancelAppointmentByCustomId,
@@ -259,16 +260,20 @@ const M = {
   dateNotUnderstood: () => `Mmm, no he pillado la fecha 🤔. Prueba con _mañana_, _este viernes_, _22 de mayo_ o _22/05_.`,
   noProfessionalsThatDay: (readable) =>
     `Vaya 😔 El ${readable} no tengo a nadie disponible. ¿Probamos con otra fecha?`,
+  askTime: (readable) =>
+    `📅 Para el *${readable}* ¿a qué hora te viene bien?\n\nPuedes decirme cosas como: _09:00_, _9:30_, _14h_, _2pm_…\n\n_(Escribe *volver* para cambiar fecha o *exit* para reiniciar)_`,
   listProfessionals: (readable, list) =>
-    `📅 Para el *${readable}* tengo disponibles a:\n\n${list}\n\nResponde con el *número* o el *nombre* del profesional que prefieras.\n\n_(Escribe *volver* para cambiar fecha o *exit* para reiniciar)_`,
+    `Perfecto ✨ para esa hora tengo disponibles a:\n\n${list}\n\nResponde con el *número* o el *nombre* del profesional que prefieras, o escribe *"me da igual"* y te asigno al que tenga menos carga de trabajo.\n\n_(Escribe *volver* para cambiar hora o *exit* para reiniciar)_`,
+  profesionalAssigned: (name) =>
+    `Perfecto, te he asignado a *${name}* 👍 que es quien menos carga tiene en ese momento.`,
   invalidChoice: () => pick([
     `Mmm, no he encontrado a ese profesional 🤔. Dime el número de la lista o el nombre tal como aparece.`,
     `No te he entendido del todo 😅. Prueba con el número que ves en la lista (ej: 1) o el nombre.`,
   ]),
   noSlots: (name, readable) =>
-    `Lo siento, *${name}* no tiene huecos el ${readable} 😕. ¿Quieres probar otra fecha o con otro profesional?`,
+    `Lo siento, ese horario no está disponible 😕. ¿Quieres probar otra hora o con otro profesional?`,
   listSlots: (name, slots) =>
-    `Perfecto ✨ será con *${name}*.\n\nEstos son los horarios libres:\n${slots.map(s => `🕒 ${s}`).join('\n')}\n\n¿A qué hora te viene mejor? (puedes escribir _09:00_, _9:30_, _10am_…)\n\n_(Escribe *volver* para cambiar o *volver a empezar de 0* para reiniciar)_`,
+    `Perfecto ✨ será con *${name}*.\n\nEstos son los horarios libres:\n${slots.map(s => `🕒 ${s}`).join('\n')}\n\n¿A qué hora te viene mejor?\n\n_(Escribe *volver* para cambiar o *volver a empezar de 0* para reiniciar)_`,
   invalidTime: (slots) =>
     `Esa hora no la tengo libre 😅. Te dejo los huecos disponibles:\n${slots.map(s => `🕒 ${s}`).join('\n')}`,
   askNotes: () =>
@@ -336,40 +341,35 @@ const handleBackIntent = async (from, text, session, companyId) => {
         clearSession(from);
         await reply(from, M.welcome());
         return 'back';
-      case 'selecting-user':
+      case 'selecting-time':
         setSession(from, { step: 'awaiting-date', companyId, customerName: session.customerName });
         await reply(from, M.askDate(session.customerName));
         return 'back';
-      case 'selecting-time':
-        if (session.availableUsers) {
-          setSession(from, {
-            step: 'selecting-user',
-            date: session.date,
-            availableUsers: session.availableUsers,
-            companyId,
-            customerName: session.customerName
-          });
-          const list = session.availableUsers
-            .map((u, i) => `*${i + 1}.* ${u.name}${u.specialties ? ` _(${u.specialties})_` : ''}`)
-            .join('\n');
-          await reply(from, M.listProfessionals(formatReadableDate(session.date), list));
-        } else {
-          setSession(from, { step: 'awaiting-date', companyId, customerName: session.customerName });
-          await reply(from, M.askDate(session.customerName));
-        }
-        return 'back';
-      case 'asking-notes':
+      case 'selecting-user':
         setSession(from, {
           step: 'selecting-time',
-          userId: session.userId,
-          userName: session.userName,
           date: session.date,
-          time: session.time,
           slots: session.slots,
           companyId,
           customerName: session.customerName
         });
-        await reply(from, M.listSlots(session.userName, session.slots));
+        await reply(from, M.askTime(formatReadableDate(session.date)));
+        return 'back';
+      case 'asking-notes':
+        setSession(from, {
+          step: 'selecting-user',
+          userId: session.userId,
+          userName: session.userName,
+          date: session.date,
+          time: session.time,
+          availableUsers: session.availableUsers,
+          companyId,
+          customerName: session.customerName
+        });
+        const list = session.availableUsers
+          .map((u, i) => `*${i + 1}.* ${u.name}${u.specialties ? ` _(${u.specialties})_` : ''}`)
+          .join('\n');
+        await reply(from, M.listProfessionals(formatReadableDate(session.date), list));
         return 'back';
       case 'confirming':
         setSession(from, {
@@ -457,17 +457,15 @@ const handleAwaitingDate = async (from, text, companyId, session) => {
     return;
   }
 
-  const users = await getAvailableUsersForDate(date, companyId);
-  if (!users.length) {
+  const slots = await getAvailableSlots(date);
+  if (!slots.length) {
     await reply(from, M.noProfessionalsThatDay(formatReadableDate(date)));
     return;
   }
 
-  setSession(from, { step: 'selecting-user', date, availableUsers: users, companyId, customerName: session.customerName });
-  const list = users
-    .map((u, i) => `*${i + 1}.* ${u.name}${u.specialties ? ` _(${u.specialties})_` : ''}`)
-    .join('\n');
-  await reply(from, M.listProfessionals(formatReadableDate(date), list));
+  setSession(from, { step: 'selecting-time', date, slots, companyId, customerName: session.customerName });
+  const normalizedSlots = slots.map(s => s.slice(0, 5));
+  await reply(from, M.askTime(formatReadableDate(date)));
 };
 
 const handleSelectingUser = async (from, text, companyId, session) => {
@@ -475,17 +473,33 @@ const handleSelectingUser = async (from, text, companyId, session) => {
   const backResult = await handleBackIntent(from, text, session, companyId);
   if (backResult) return;
 
-  // Permitir cambiar de fecha en mitad del flujo
-  const newDate = parseDateFromText(text);
-  if (newDate && newDate !== session.date) {
-    setSession(from, { step: 'awaiting-date', companyId, customerName: session.customerName });
-    return handleAwaitingDate(from, text, companyId, getSession(from));
+  // Permitir cambiar de hora en mitad del flujo
+  const newTime = parseTime(text);
+  if (newTime && newTime !== session.time) {
+    setSession(from, { step: 'selecting-time', date: session.date, slots: session.slots, companyId, customerName: session.customerName });
+    return handleSelectingTime(from, text, companyId, getSession(from));
   }
 
-  const user = matchUserChoice(text, session.availableUsers || []);
-  if (!user) {
-    await reply(from, M.invalidChoice());
-    return;
+  // Verificar si dice "me da igual"
+  const norm_text = norm(text);
+  let user;
+  
+  if (/me\s*da\s*igual|cualquiera|el\s*que\s*prefieras|no\s*importa|da\s*igual/.test(norm_text)) {
+    // Asignar automáticamente el con menos carga
+    user = await getLeastBusyUserForDateAndTime(session.date, session.time, session.availableUsers, companyId);
+    if (!user) {
+      await reply(from, M.invalidChoice());
+      return;
+    }
+    // Enviar mensaje de asignación automática
+    await reply(from, M.profesionalAssigned(user.name));
+  } else {
+    // Buscar por número o nombre
+    user = matchUserChoice(text, session.availableUsers || []);
+    if (!user) {
+      await reply(from, M.invalidChoice());
+      return;
+    }
   }
 
   const planning = await getPlanningByUserAndDate(user.id, session.date, companyId);
@@ -494,24 +508,23 @@ const handleSelectingUser = async (from, text, companyId, session) => {
     return;
   }
 
-  const slots = await getAvailableSlots(session.date, user.id);
-  if (!slots.length) {
-    await reply(from, M.noSlots(user.name, formatReadableDate(session.date)));
-    return;
-  }
+  // 🔥 Conversión local España (UTC+2 CEST) → UTC
+  const [hours, minutes] = session.time.split(':').map(Number);
+  const utcHours = String((hours - 2 + 24) % 24).padStart(2, '0');
+  const utcMinutes = String(minutes).padStart(2, '0');
+  const datetime = `${session.date}T${utcHours}:${utcMinutes}:00`;
 
-  const normalizedSlots = slots.map(s => s.slice(0, 5));
   setSession(from, {
-    step: 'selecting-time',
+    step: 'asking-notes',
     userId: user.id,
     userName: user.name,
     date: session.date,
-    slots: normalizedSlots,
+    time: session.time,
+    datetime,
     companyId,
-    customerName: session.customerName,
-    availableUsers: session.availableUsers
+    customerName: session.customerName
   });
-  await reply(from, M.listSlots(user.name, normalizedSlots));
+  await reply(from, M.askNotes());
 };
 
 const handleSelectingTime = async (from, text, companyId, session) => {
@@ -532,21 +545,32 @@ const handleSelectingTime = async (from, text, companyId, session) => {
     return;
   }
 
-  const slots = await getAvailableSlots(session.date, session.userId);
-  const normalized = slots.map(s => s.slice(0, 5));
-  if (!normalized.includes(time)) {
-    await reply(from, M.invalidTime(normalized));
+  // Validar que la hora esté disponible
+  if (!session.slots.includes(time)) {
+    await reply(from, M.invalidTime(session.slots || []));
     return;
   }
 
-  // 🔥 Conversión local España (UTC+2 CEST) → UTC
-  const [hours, minutes] = time.split(':').map(Number);
-  const utcHours = String((hours - 2 + 24) % 24).padStart(2, '0');
-  const utcMinutes = String(minutes).padStart(2, '0');
-  const datetime = `${session.date}T${utcHours}:${utcMinutes}:00`;
+  // Obtener usuarios disponibles para esa fecha+hora
+  const availableUsers = await getAvailableUsersForDateAndTime(session.date, time, companyId);
+  if (!availableUsers.length) {
+    await reply(from, M.noProfessionalsThatDay(formatReadableDate(session.date)));
+    return;
+  }
 
-  setSession(from, { step: 'asking-notes', time, datetime, companyId, customerName: session.customerName, userId: session.userId, userName: session.userName, date: session.date });
-  await reply(from, M.askNotes());
+  setSession(from, {
+    step: 'selecting-user',
+    date: session.date,
+    time,
+    slots: session.slots,
+    availableUsers,
+    companyId,
+    customerName: session.customerName
+  });
+  const list = availableUsers
+    .map((u, i) => `*${i + 1}.* ${u.name}${u.specialties ? ` _(${u.specialties})_` : ''}`)
+    .join('\n');
+  await reply(from, M.listProfessionals(formatReadableDate(session.date), list));
 };
 
 const handleAskingNotes = async (from, text, companyId, session) => {
@@ -689,10 +713,10 @@ const handleMessage = async (from, rawText, companyId = DEFAULT_COMPANY_ID, cred
         return handleAskingName(from, text, companyId, session);
       case 'awaiting-date':
         return handleAwaitingDate(from, text, companyId, session);
-      case 'selecting-user':
-        return handleSelectingUser(from, text, companyId, session);
       case 'selecting-time':
         return handleSelectingTime(from, text, companyId, session);
+      case 'selecting-user':
+        return handleSelectingUser(from, text, companyId, session);
       case 'asking-notes':
         return handleAskingNotes(from, text, companyId, session);
       case 'confirming':

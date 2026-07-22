@@ -74,6 +74,81 @@ const getAvailableUsersForDate = async (date, company_id = null) => {
   })
 }
 
+const getAvailableUsersForDateAndTime = async (date, time, company_id = null) => {
+  // time formato: "09:00", "14:30"
+  const dateObj = new Date(`${date}T00:00:00`)
+  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  const [hours, minutes] = time.split(':').map(Number)
+  
+  // Crear datetime con la hora especificada
+  const datetimeObj = new Date(dateObj)
+  datetimeObj.setHours(hours, minutes, 0, 0)
+  
+  // Buscar usuarios que:
+  // 1. Tengan planning (trabajo) en esa fecha
+  // 2. No tengan cita reservada en esa hora exacta
+  const allUsers = await prisma.user.findMany({
+    where: {
+      isActive: true,
+      plannings: {
+        some: {
+          date: {
+            gte: dateObj,
+            lt: new Date(dateObj.getTime() + 24 * 60 * 60 * 1000),
+          },
+          type: 'work',
+        },
+      },
+      ...(companyIdInt !== null && companyIdInt !== undefined && Number.isInteger(companyIdInt) && { companyId: companyIdInt }),
+    },
+    orderBy: { name: 'asc' },
+  })
+  
+  // Filtrar: excluir usuarios que tengan cita en esa hora exacta
+  const bookedAppointments = await prisma.appointment.findMany({
+    where: {
+      datetime: datetimeObj,
+      status: { not: 'cancelled' },
+    },
+    select: { userId: true },
+  })
+  
+  const bookedUserIds = new Set(bookedAppointments.map(a => a.userId))
+  return allUsers.filter(u => !bookedUserIds.has(u.id))
+}
+
+const getLeastBusyUserForDateAndTime = async (date, time, users, company_id = null) => {
+  // De una lista de usuarios, retorna el que tenga MENOS citas en esa fecha
+  if (!users || users.length === 0) return null
+  if (users.length === 1) return users[0]
+  
+  const dateObj = new Date(`${date}T00:00:00`)
+  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  
+  // Contar citas por usuario en esa fecha
+  const appointmentCounts = await Promise.all(
+    users.map(async (user) => {
+      const count = await prisma.appointment.count({
+        where: {
+          userId: user.id,
+          datetime: {
+            gte: dateObj,
+            lt: new Date(dateObj.getTime() + 24 * 60 * 60 * 1000),
+          },
+          status: { not: 'cancelled' },
+          ...(companyIdInt !== null && { companyId: companyIdInt }),
+        },
+      })
+      return { user, count }
+    })
+  )
+  
+  // Retornar usuario con menor count
+  return appointmentCounts.reduce((least, current) => 
+    current.count < least.count ? current : least
+  ).user
+}
+
 const bookAppointment = async (
   phone,
   datetime,
@@ -773,6 +848,8 @@ module.exports = {
   getPlanningByUserAndDateRange,
   getPlanningById,
   getAvailableUsersForDate,
+  getAvailableUsersForDateAndTime,
+  getLeastBusyUserForDateAndTime,
   getAllPlanning,
   createPlanning,
   updatePlanning,
