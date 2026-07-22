@@ -1,4 +1,7 @@
 const { sendMessage } = require('./whatsapp');
+const { broadcastAppointmentCreated } = require('./websocket');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
 // =====================================================================
 // CREDENCIALES WABA POR CONVERSACIÓN
@@ -605,6 +608,19 @@ const handleConfirming = async (from, text, companyId, session) => {
         session.companyId || companyId,
         session.customerName || null,
       );
+      
+      // Broadcast WebSocket event to employee + all company users
+      const companyUsers = await prisma.user.findMany({
+        where: { companyId: session.companyId || companyId, isActive: true },
+        select: { id: true },
+      });
+      const targetUserIds = [
+        session.userId,
+        ...companyUsers.map(u => u.id).filter(id => id !== session.userId)
+      ];
+      console.log(`💾 Appointment created by bot. Broadcasting to users:`, targetUserIds);
+      broadcastAppointmentCreated(appointment, targetUserIds);
+      
       await reply(from, M.bookingConfirmed({
         readable: formatReadableDate(session.date),
         time: session.time,

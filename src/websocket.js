@@ -8,12 +8,16 @@ const initWebSocketServer = (server) => {
   const wss = new WebSocket.Server({ server, path: '/ws' });
 
   wss.on('connection', (ws, req) => {
+    console.log(`🔌 WebSocket connection attempt from ${req.headers['x-forwarded-for'] || req.socket.remoteAddress}`);
     const url = new URL(req.url, `http://${req.headers.host}`);
     const userId = url.searchParams.get('userId');
     const token = url.searchParams.get('token');
 
+    console.log(`  userId=${userId}, token=${token ? 'present' : 'missing'}`);
+
     // Basic auth check (token validation optional)
     if (!userId) {
+      console.log(`  ❌ Rejected: no userId`);
       ws.close(4000, 'userId required');
       return;
     }
@@ -24,7 +28,13 @@ const initWebSocketServer = (server) => {
     }
     clients.get(userId).add(ws);
 
-    console.log(`✅ WebSocket connected: userId=${userId}`);
+    // Heartbeat: mark connection as alive
+    ws.isAlive = true;
+    ws.on('pong', () => {
+      ws.isAlive = true;
+    });
+
+    console.log(`✅ WebSocket connected: userId=${userId}, total connections for user=${clients.get(userId).size}, total connected users=${clients.size}`);
 
     ws.on('close', () => {
       const userClients = clients.get(userId);
@@ -40,6 +50,23 @@ const initWebSocketServer = (server) => {
     ws.on('error', (error) => {
       console.error(`WebSocket error (userId=${userId}):`, error);
     });
+  });
+
+  // Ping all connected clients every 30 seconds (heartbeat)
+  const heartbeatInterval = setInterval(() => {
+    wss.clients.forEach((ws) => {
+      // Close stale connections
+      if (ws.isAlive === false) {
+        return ws.terminate();
+      }
+      ws.isAlive = false;
+      ws.ping();
+    });
+  }, 30000);
+
+  // Cleanup interval on server close
+  wss.on('close', () => {
+    clearInterval(heartbeatInterval);
   });
 
   return wss;
