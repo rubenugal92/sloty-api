@@ -617,6 +617,37 @@ app.get('/api/users/available', verifyToken, async (req, res) => {
   }
 });
 
+app.get('/api/users/least-busy', verifyToken, async (req, res) => {
+  try {
+    const { date, time } = req.query;
+    if (!date || !time) {
+      return res.status(400).json({ error: 'date and time are required' });
+    }
+
+    let company_id = req.user.company_id;
+    if (req.user.role === 'superadmin' && req.query.company_id) {
+      company_id = parseInt(req.query.company_id, 10);
+    }
+
+    // Obtener empleados disponibles para esa fecha+hora
+    const availableUsers = await getAvailableUsersForDateAndTime(date, time, company_id);
+    if (!availableUsers.length) {
+      return res.status(404).json({ error: 'No available users for this date and time' });
+    }
+
+    // Obtener el menos ocupado
+    const leastBusy = await getLeastBusyUserForDateAndTime(date, time, availableUsers, company_id);
+    if (!leastBusy) {
+      return res.status(404).json({ error: 'Could not determine least busy user' });
+    }
+
+    res.json(formatUser(leastBusy));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error finding least busy user' });
+  }
+});
+
 app.get('/api/users/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
