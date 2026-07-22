@@ -486,13 +486,6 @@ const handleSelectingUser = async (from, text, companyId, session) => {
   const backResult = await handleBackIntent(from, text, session, companyId);
   if (backResult) return;
 
-  // Permitir cambiar de hora en mitad del flujo
-  const newTime = parseTime(text);
-  if (newTime && newTime !== session.time) {
-    setSession(from, { step: 'selecting-time', date: session.date, slots: session.slots, companyId, customerName: session.customerName });
-    return handleSelectingTime(from, text, companyId, getSession(from));
-  }
-
   // Verificar si dice "me da igual"
   const norm_text = norm(text);
   let user;
@@ -507,9 +500,17 @@ const handleSelectingUser = async (from, text, companyId, session) => {
     // Enviar mensaje de asignación automática
     await reply(from, M.profesionalAssigned(user.name));
   } else {
-    // Buscar por número o nombre
+    // 🔥 PRIMERO: intentar matchear como empleado (número o nombre)
     user = matchUserChoice(text, session.availableUsers || []);
+    
+    // Si NO es empleado válido, permitir cambiar de hora en mitad del flujo
     if (!user) {
+      const newTime = parseTime(text);
+      if (newTime && newTime !== session.time) {
+        setSession(from, { step: 'selecting-time', date: session.date, slots: session.slots, companyId, customerName: session.customerName });
+        return handleSelectingTime(from, text, companyId, getSession(from));
+      }
+      // No es empleado ni hora válida
       await reply(from, M.invalidChoice());
       return;
     }
