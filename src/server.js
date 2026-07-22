@@ -217,6 +217,13 @@ app.use((req, res, next) => {
   next();
 });
 
+// ===================== HEALTH CHECK =====================
+
+// Render health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 // ===================== WEBHOOK =====================
 
 // Verificación del webhook (META lo requiere)
