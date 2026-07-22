@@ -123,18 +123,20 @@ const getAvailableUsersForDate = async (date, company_id = null) => {
 }
 
 const getAvailableUsersForDateAndTime = async (date, time, company_id = null) => {
-  // time formato: "09:00", "14:30"
+  // time formato: "09:00", "14:30" (hora local España UTC+2)
   const dateObj = new Date(`${date}T00:00:00`)
   const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
   const [hours, minutes] = time.split(':').map(Number)
   
-  // Crear datetime con la hora especificada
-  const datetimeObj = new Date(dateObj)
-  datetimeObj.setHours(hours, minutes, 0, 0)
+  // Crear datetime local y convertir a UTC
+  // Si usuario selecciona 12:00 local (UTC+2), guardar como 10:00 UTC
+  const localDatetime = new Date(dateObj)
+  localDatetime.setHours(hours, minutes, 0, 0)
+  const datetimeObj = new Date(localDatetime.getTime() - 2 * 60 * 60 * 1000)
   
   // Buscar usuarios que:
   // 1. Tengan planning (trabajo) en esa fecha
-  // 2. No tengan cita reservada en esa hora exacta
+  // 2. No tengan cita reservada en esa hora exacta (UTC)
   // 3. Estén dentro de su horario de trabajo (startTime <= hora < endTime)
   const allUsers = await prisma.user.findMany({
     where: {
