@@ -496,8 +496,16 @@ app.post('/api/appointments', verifyToken, async (req, res) => {
     const targetCompanyId = req.user.role === 'superadmin' ? company_id || req.user.company_id : req.user.company_id;
     const appointment = await bookAppointment(phone, datetime, service, user_id, notes, targetCompanyId, customer_name);
     
-    // Broadcast WebSocket event
-    broadcastAppointmentCreated(formatAppointment(appointment), user_id);
+    // Broadcast WebSocket event to employee + all company users (admins/managers)
+    const companyUsers = await prisma.user.findMany({
+      where: { companyId: targetCompanyId, isActive: true },
+      select: { id: true },
+    });
+    const targetUserIds = [
+      user_id,
+      ...companyUsers.map(u => u.id).filter(id => id !== user_id)
+    ];
+    broadcastAppointmentCreated(formatAppointment(appointment), targetUserIds);
     
     res.status(201).json(formatAppointment(appointment));
   } catch (err) {
@@ -542,8 +550,16 @@ app.delete('/api/appointments/:id', verifyToken, async (req, res) => {
     const appointmentId = parseInt(id, 10);
     const deleted = await deleteAppointment(id);
     
-    // Broadcast WebSocket event
-    broadcastAppointmentDeleted(appointmentId, appointment.userId);
+    // Broadcast WebSocket event to employee + all company users
+    const companyUsers = await prisma.user.findMany({
+      where: { companyId: appointment.user?.companyId || req.user.company_id, isActive: true },
+      select: { id: true },
+    });
+    const targetUserIds = [
+      appointment.userId,
+      ...companyUsers.map(u => u.id).filter(id => id !== appointment.userId)
+    ];
+    broadcastAppointmentDeleted(appointmentId, targetUserIds);
     
     res.json({ message: 'Appointment deleted', appointment: formatAppointment(deleted) });
   } catch (err) {

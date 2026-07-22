@@ -45,24 +45,27 @@ const initWebSocketServer = (server) => {
   return wss;
 };
 
-// Broadcast appointment created to all connected users (or specific user if specified)
-const broadcastAppointmentCreated = (appointment, targetUserId = null) => {
+// Broadcast appointment created to specific users or all
+const broadcastAppointmentCreated = (appointment, targetUserIds = null) => {
   const message = JSON.stringify({
     type: 'appointment_created',
     data: appointment,
     timestamp: new Date().toISOString(),
   });
 
-  if (targetUserId) {
-    // Send to specific user
-    const userClients = clients.get(String(targetUserId));
-    if (userClients) {
-      userClients.forEach((ws) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(message);
-        }
-      });
-    }
+  if (targetUserIds) {
+    // Send to specific users (can be array or single ID)
+    const ids = Array.isArray(targetUserIds) ? targetUserIds : [targetUserIds];
+    ids.forEach(userId => {
+      const userClients = clients.get(String(userId));
+      if (userClients) {
+        userClients.forEach((ws) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(message);
+          }
+        });
+      }
+    });
   } else {
     // Broadcast to all connected clients
     clients.forEach((userClients) => {
@@ -76,22 +79,25 @@ const broadcastAppointmentCreated = (appointment, targetUserId = null) => {
 };
 
 // Broadcast appointment deleted
-const broadcastAppointmentDeleted = (appointmentId, targetUserId = null) => {
+const broadcastAppointmentDeleted = (appointmentId, targetUserIds = null) => {
   const message = JSON.stringify({
     type: 'appointment_deleted',
     data: { id: appointmentId },
     timestamp: new Date().toISOString(),
   });
 
-  if (targetUserId) {
-    const userClients = clients.get(String(targetUserId));
-    if (userClients) {
-      userClients.forEach((ws) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(message);
-        }
-      });
-    }
+  if (targetUserIds) {
+    const ids = Array.isArray(targetUserIds) ? targetUserIds : [targetUserIds];
+    ids.forEach(userId => {
+      const userClients = clients.get(String(userId));
+      if (userClients) {
+        userClients.forEach((ws) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(message);
+          }
+        });
+      }
+    });
   } else {
     clients.forEach((userClients) => {
       userClients.forEach((ws) => {
