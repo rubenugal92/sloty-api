@@ -593,7 +593,7 @@ app.get('/api/users', verifyToken, async (req, res) => {
 
 app.get('/api/users/available', verifyToken, async (req, res) => {
   try {
-    const { date } = req.query;
+    const { date, time } = req.query;
     if (!date) {
       return res.status(400).json({ error: 'date is required' });
     }
@@ -603,7 +603,13 @@ app.get('/api/users/available', verifyToken, async (req, res) => {
       company_id = parseInt(req.query.company_id, 10);
     }
 
-    const users = await getAvailableUsersForDate(date, company_id);
+    // Si time está presente, filtrar también por horario; si no, retornar solo por fecha
+    let users;
+    if (time) {
+      users = await getAvailableUsersForDateAndTime(date, time, company_id);
+    } else {
+      users = await getAvailableUsersForDate(date, company_id);
+    }
     res.json(users.map(formatUser));
   } catch (err) {
     console.error(err);
