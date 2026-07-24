@@ -63,13 +63,19 @@ const {
   deletePlanning,
   deletePlanningByUserAndDate,
   deletePlanningByUserAndDateRange,
+  createCenter,
+  getCenterById,
+  getCentersByCompanyId,
+  getCenterByWhatsappPhoneId,
+  updateCenter,
+  deleteCenter,
+  saveCenterWhatsappConfig,
   createCompany,
   getAllCompanies,
   getCompanyById,
   getCompanyByCode,
   getCompanyByWhatsappPhoneId,
   updateCompany,
-  saveCompanyWhatsappConfig
 } = require('./db');
 
 const { PrismaClient } = require('@prisma/client');
@@ -157,6 +163,20 @@ const formatCompany = (c) => {
     name: c.name,
     company_code: c.companyCode || c.company_code,
     contact_email: c.contactEmail || c.contact_email || null,
+    phone: c.phone || null,
+    is_active: typeof c.isActive === 'boolean' ? c.isActive : (c.is_active ?? null),
+    created_at: c.createdAt || null,
+    updated_at: c.updatedAt || null,
+  }
+}
+
+const formatCenter = (c) => {
+  if (!c) return null
+  return {
+    id: c.id,
+    company_id: c.companyId || c.company_id,
+    name: c.name,
+    address: c.address || null,
     phone: c.phone || null,
     is_active: typeof c.isActive === 'boolean' ? c.isActive : (c.is_active ?? null),
     whatsapp_phone_number_id: c.whatsappPhoneNumberId || c.whatsapp_phone_number_id || null,
@@ -253,17 +273,28 @@ app.post('/webhook', async (req, res) => {
           if (change.field !== 'messages') continue;
 
           // Resolver el tenant a partir del phone_number_id que envía Meta.
-          // Fallback a env vars (legacy single-tenant) si la company no se encuentra.
+          // Buscar primero en Center (nuevo), luego fallback a Company (legacy) si la company no se encuentra.
           const phoneNumberId = change.value?.metadata?.phone_number_id || null;
           let companyId, credentials;
           if (phoneNumberId) {
-            const company = await getCompanyByWhatsappPhoneId(phoneNumberId);
-            if (company) {
-              companyId = company.id;
+            // Buscar en Center primero
+            const center = await getCenterByWhatsappPhoneId(phoneNumberId);
+            if (center) {
+              companyId = center.companyId;
               credentials = {
-                phone_number_id: company.whatsappPhoneNumberId || company.whatsapp_phone_number_id,
-                access_token: company.whatsappAccessToken || company.whatsapp_access_token,
+                phone_number_id: center.whatsappPhoneNumberId || center.whatsapp_phone_number_id,
+                access_token: center.whatsappAccessToken || center.whatsapp_access_token,
               };
+            } else {
+              // Fallback: buscar en Company (legacy)
+              const company = await getCompanyByWhatsappPhoneId(phoneNumberId);
+              if (company) {
+                companyId = company.id;
+                credentials = {
+                  phone_number_id: company.whatsappPhoneNumberId || company.whatsapp_phone_number_id,
+                  access_token: company.whatsappAccessToken || company.whatsapp_access_token,
+                };
+              }
             }
           }
           if (!companyId) {
@@ -296,6 +327,7 @@ const DEFAULT_REDIRECT_URI = process.env.META_REDIRECT_URI || process.env.REDIRE
 app.get('/api/whatsapp/oauth/connect', verifyToken, async (req, res) => {
   try {
     const requestedCompanyId = req.query.company_id ? parseInt(req.query.company_id, 10) : null;
+    const requestedCenterId = req.query.center_id ? parseInt(req.query.center_id, 10) : null;
     let companyId = requestedCompanyId || req.user?.company_id;
 
     if (req.user?.role === 'superadmin' && !companyId) {
@@ -307,20 +339,29 @@ app.get('/api/whatsapp/oauth/connect', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Company not found' });
     }
 
+    // Si se proporciona centerId, validar que exista y pertenezca a la company
+    let centerId = requestedCenterId;
+    if (centerId) {
+      const center = await getCenterById(centerId);
+      if (!center || center.companyId !== companyId) {
+        return res.status(404).json({ error: 'Center not found or does not belong to this company' });
+      }
+    }
+
     const clientId = process.env.META_APP_ID || process.env.FACEBOOK_APP_ID;
     const redirectUri = process.env.META_REDIRECT_URI || DEFAULT_REDIRECT_URI;
     if (!clientId || !redirectUri) {
       return res.status(500).json({ error: 'Meta App ID and Redirect URI must be configured in the backend environment (.env)' });
     }
 
-    const state = buildMetaOAuthState({ companyId, userId: req.user.id });
+    const state = buildMetaOAuthState({ companyId, userId: req.user.id, centerId });
     const url = buildMetaOAuthUrl({
       clientId,
       redirectUri,
       state,
     });
 
-    res.json({ url, company_id: companyId, state });
+    res.json({ url, company_id: companyId, center_id: centerId || null, state });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error creating WhatsApp OAuth URL' });
@@ -340,12 +381,25 @@ app.get('/api/whatsapp/oauth/callback', async (req, res) => {
       return res.redirect(`${FRONTEND_URL}/empresas?whatsapp=error&message=${encodeURIComponent('Missing OAuth code or state')}`);
     }
 
-    const { companyId } = parseMetaOAuthState(state);
+    const { companyId, centerId } = parseMetaOAuthState(state);
     if (!companyId) {
       return res.redirect(`${FRONTEND_URL}/empresas?whatsapp=error&message=${encodeURIComponent('Invalid OAuth state')}`);
     }
 
     const company = await getCompanyById(companyId);
+    if (!company) {
+      return res.redirect(`${FRONTEND_URL}/empresas?whatsapp=error&message=${encodeURIComponent('Company not found')}`);
+    }
+
+    // Si centerId está en state, validar que exista
+    let targetCenterId = centerId && centerId !== 0 ? centerId : null;
+    if (targetCenterId) {
+      const center = await getCenterById(targetCenterId);
+      if (!center || center.companyId !== companyId) {
+        return res.redirect(`${FRONTEND_URL}/empresas?whatsapp=error&message=${encodeURIComponent('Center not found or does not belong to this company')}`);
+      }
+    }
+
     const clientId = process.env.META_APP_ID || process.env.FACEBOOK_APP_ID;
     const clientSecret = process.env.META_APP_SECRET || process.env.FACEBOOK_APP_SECRET;
     const redirectUri = process.env.META_REDIRECT_URI || DEFAULT_REDIRECT_URI;
@@ -370,15 +424,44 @@ app.get('/api/whatsapp/oauth/callback', async (req, res) => {
     const config = await getWhatsAppBusinessConfig(accessToken);
     console.log('META CONFIG:', config);
 
-    await saveCompanyWhatsappConfig(companyId, {
-      phone_number_id: config.phoneNumberId,
-      access_token: accessToken,
-      display_number: config.displayNumber,
-      whatsapp_business_account_id: config.whatsappBusinessAccountId,
-      business_id: config.businessId,
-      connected_at: new Date(),
-      connection_status: 'connected',
-    });
+    // Si hay centerId, guardar en Center; de lo contrario, crear un Center por defecto
+    if (targetCenterId) {
+      await saveCenterWhatsappConfig(targetCenterId, {
+        phone_number_id: config.phoneNumberId,
+        access_token: accessToken,
+        display_number: config.displayNumber,
+        whatsapp_business_account_id: config.whatsappBusinessAccountId,
+        business_id: config.businessId,
+        connected_at: new Date(),
+        connection_status: 'connected',
+      });
+    } else {
+      // Crear un Center por defecto si no existe
+      const centers = await getCentersByCompanyId(companyId);
+      let defaultCenter = centers.find(c => c.name === 'Default');
+      
+      if (!defaultCenter) {
+        defaultCenter = await createCenter(companyId, 'Default', null, null, {
+          phone_number_id: config.phoneNumberId,
+          access_token: accessToken,
+          display_number: config.displayNumber,
+          whatsapp_business_account_id: config.whatsappBusinessAccountId,
+          business_id: config.businessId,
+          connected_at: new Date(),
+          connection_status: 'connected',
+        });
+      } else {
+        await saveCenterWhatsappConfig(defaultCenter.id, {
+          phone_number_id: config.phoneNumberId,
+          access_token: accessToken,
+          display_number: config.displayNumber,
+          whatsapp_business_account_id: config.whatsappBusinessAccountId,
+          business_id: config.businessId,
+          connected_at: new Date(),
+          connection_status: 'connected',
+        });
+      }
+    }
 
     res.redirect(`${FRONTEND_URL}/empresas?whatsapp=connected`);
   } catch (err) {
@@ -1001,7 +1084,6 @@ app.post('/api/companies', verifyToken, verifySuperAdmin, async (req, res) => {
   try {
     const {
       name, company_code, contact_email, phone,
-      whatsapp_phone_number_id, whatsapp_access_token, whatsapp_display_number,
     } = req.body;
 
     if (!name || !company_code) {
@@ -1013,11 +1095,7 @@ app.post('/api/companies', verifyToken, verifySuperAdmin, async (req, res) => {
       return res.status(409).json({ error: 'Company code already exists' });
     }
 
-    const company = await createCompany(name, company_code, contact_email, phone, {
-      phone_number_id: whatsapp_phone_number_id,
-      access_token: whatsapp_access_token,
-      display_number: whatsapp_display_number,
-    });
+    const company = await createCompany(name, company_code, contact_email, phone);
     res.status(201).json({ message: 'Company created successfully', company: formatCompany(company) });
   } catch (err) {
     console.error(err);
@@ -1065,6 +1143,134 @@ app.put('/api/companies/:id', verifyToken, verifySuperAdmin, async (req, res) =>
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error updating company' });
+  }
+});
+
+// ===================== CENTERS ENDPOINTS =====================
+
+// Obtener centers de una company
+app.get('/api/centers/:company_id', verifyToken, async (req, res) => {
+  try {
+    const { company_id } = req.params;
+    const companyIdInt = parseInt(company_id, 10);
+
+    // Verificar permiso
+    if (req.user?.role !== 'superadmin' && req.user?.company_id !== companyIdInt) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const company = await getCompanyById(companyIdInt);
+    if (!company) {
+      return res.status(404).json({ error: 'Company not found' });
+    }
+
+    const centers = await getCentersByCompanyId(companyIdInt);
+    res.json(centers.map(formatCenter));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error fetching centers' });
+  }
+});
+
+// Crear nuevo center en una company
+app.post('/api/centers', verifyToken, async (req, res) => {
+  try {
+    const { company_id, name, address, phone } = req.body;
+
+    if (!company_id || !name) {
+      return res.status(400).json({ error: 'company_id and name are required' });
+    }
+
+    const companyIdInt = parseInt(company_id, 10);
+
+    // Verificar permiso (solo superadmin o admin de la company)
+    if (req.user?.role !== 'superadmin' && req.user?.company_id !== companyIdInt) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const company = await getCompanyById(companyIdInt);
+    if (!company) {
+      return res.status(404).json({ error: 'Company not found' });
+    }
+
+    const center = await createCenter(companyIdInt, name, address, phone);
+    res.status(201).json({ message: 'Center created successfully', center: formatCenter(center) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error creating center' });
+  }
+});
+
+// Obtener center por ID
+app.get('/api/center/:id', verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const center = await getCenterById(id);
+
+    if (!center) {
+      return res.status(404).json({ error: 'Center not found' });
+    }
+
+    // Verificar permiso
+    if (req.user?.role !== 'superadmin' && req.user?.company_id !== center.companyId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    res.json(formatCenter(center));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error fetching center' });
+  }
+});
+
+// Actualizar center
+app.put('/api/center/:id', verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No updates provided' });
+    }
+
+    const center = await getCenterById(id);
+    if (!center) {
+      return res.status(404).json({ error: 'Center not found' });
+    }
+
+    // Verificar permiso
+    if (req.user?.role !== 'superadmin' && req.user?.company_id !== center.companyId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const updatedCenter = await updateCenter(id, updates);
+    res.json(formatCenter(updatedCenter));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error updating center' });
+  }
+});
+
+// Eliminar center
+app.delete('/api/center/:id', verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const center = await getCenterById(id);
+    if (!center) {
+      return res.status(404).json({ error: 'Center not found' });
+    }
+
+    // Verificar permiso
+    if (req.user?.role !== 'superadmin' && req.user?.company_id !== center.companyId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    await deleteCenter(id);
+    res.json({ message: 'Center deleted successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error deleting center' });
   }
 });
 

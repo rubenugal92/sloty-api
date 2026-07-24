@@ -8,25 +8,25 @@ datasource db {
 }
 
 model User {
-  id          Int      @id @default(autoincrement())
-  username    String   @unique
+  id          Int     @id @default(autoincrement())
+  username    String  @unique
   name        String?
-  email       String   @unique
+  email       String  @unique
   password    String
   phone       String?
   type        String?
   specialties String?
-  role        String   @default("user")
-  isActive    Boolean  @default(true)
+  role        String  @default("user")
+  isActive    Boolean @default(true)
 
-  companyId   Int?
-  company     Company? @relation(fields: [companyId], references: [id])
+  companyId Int?
+  company   Company? @relation(fields: [companyId], references: [id])
 
   appointments Appointment[]
   plannings    Planning[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Appointment {
@@ -40,57 +40,56 @@ model Appointment {
   duration     Int?
   customId     String?  @unique
 
-  userId       Int?
-  user         User?    @relation(fields: [userId], references: [id])
+  userId Int?
+  user   User? @relation(fields: [userId], references: [id])
 
-  companyId    Int?
-  company      Company? @relation(fields: [companyId], references: [id])
+  companyId Int?
+  company   Company? @relation(fields: [companyId], references: [id])
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  centerId Int?
+  center   Center? @relation(fields: [centerId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([datetime])
+  @@index([centerId])
 }
 
 model Planning {
-  id        Int      @id @default(autoincrement())
-  date      DateTime
-  type      String
-  notes     String?
+  id    Int      @id @default(autoincrement())
+  date  DateTime
+  type  String
+  notes String?
 
   startTime String?
   endTime   String?
 
-  userId    Int
-  user      User     @relation(fields: [userId], references: [id])
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
 
   companyId Int?
   company   Company? @relation(fields: [companyId], references: [id])
+
+  centerId Int?
+  center   Center? @relation(fields: [centerId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([userId, date])
+  @@index([centerId])
 }
 
 model Company {
-  id                     Int      @id @default(autoincrement())
-  name                   String
-  companyCode            String   @unique
-  contactEmail           String?
-  phone                  String?
-  isActive               Boolean  @default(true)
+  id           Int     @id @default(autoincrement())
+  name         String
+  companyCode  String  @unique
+  contactEmail String?
+  phone        String?
+  isActive     Boolean @default(true)
 
-  whatsappPhoneNumberId  String?
-  whatsappAccessToken    String?
-  whatsappDisplayNumber  String?
-  whatsappBusinessAccountId String?
-  whatsappBusinessId     String?
-  whatsappConnectedAt    DateTime?
-  whatsappConnectionStatus String? @default("disconnected")
-  tokenUpdatedAt         DateTime?
-  tokenExpiresAt         DateTime?
-
+  centers      Center[]
   users        User[]
   appointments Appointment[]
   plannings    Planning[]
@@ -101,20 +100,53 @@ model Company {
   updatedAt DateTime @updatedAt
 }
 
-model SessionAction {
-  id          Int      @id @default(autoincrement())
-  phone       String
-  action      String
-  step        String?
-  sessionData Json?
-  errorMessage String?
-  success     Boolean  @default(true)
+model Center {
+  id        Int     @id @default(autoincrement())
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  companyId   Int?
-  company     Company? @relation(fields: [companyId], references: [id])
+  name     String
+  address  String?
+  phone    String?
+  isActive Boolean @default(true)
 
-  createdAt   DateTime @default(now())
+  whatsappPhoneNumberId     String?
+  whatsappAccessToken       String?
+  whatsappDisplayNumber     String?
+  whatsappBusinessAccountId String?
+  whatsappBusinessId        String?
+  whatsappConnectedAt       DateTime?
+  whatsappConnectionStatus  String?   @default("disconnected")
+  tokenUpdatedAt            DateTime?
+  tokenExpiresAt            DateTime?
 
-  @@index([phone])
+  appointments   Appointment[]
+  plannings      Planning[]
+  sessionActions SessionAction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
 }
 
+model SessionAction {
+  id           Int     @id @default(autoincrement())
+  phone        String
+  action       String
+  step         String?
+  sessionData  Json?
+  errorMessage String?
+  success      Boolean @default(true)
+
+  companyId Int?
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  centerId Int?
+  center   Center? @relation(fields: [centerId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([phone])
+  @@index([centerId])
+}

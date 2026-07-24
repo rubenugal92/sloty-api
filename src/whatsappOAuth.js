@@ -18,18 +18,19 @@ const buildMetaOAuthUrl = ({ clientId, redirectUri, state, scopes = ['whatsapp_b
   return `${META_OAUTH_URL}?${params.toString()}`;
 };
 
-const buildMetaOAuthState = ({ companyId, userId }) => {
+const buildMetaOAuthState = ({ companyId, userId, centerId }) => {
   const nonce = crypto.randomBytes(8).toString('hex');
-  return `whatsapp_oauth_${nonce}_company_${companyId}_user_${userId}`;
+  return `whatsapp_oauth_${nonce}_company_${companyId}_user_${userId}_center_${centerId || '0'}`;
 };
 
 const parseMetaOAuthState = (state) => {
-  const match = state?.match(/company_(\d+)_user_(\d+)/);
+  const match = state?.match(/company_(\d+)_user_(\d+)_center_(\d+)/);
   if (!match) return {};
 
   return {
     companyId: parseInt(match[1], 10),
     userId: parseInt(match[2], 10),
+    centerId: parseInt(match[3], 10) || null,
   };
 };
 

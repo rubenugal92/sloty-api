@@ -727,21 +727,26 @@ const deletePlanningByUserAndDateRange = async (userId, startDate, endDate, comp
 }
 
 // =====================================================================
-// COMPANIES
+// CENTERS
 // =====================================================================
 
-const createCompany = async (
+const createCenter = async (
+  companyId,
   name,
-  company_code,
-  contact_email = null,
+  address = null,
   phone = null,
   whatsapp = {}
 ) => {
-  return await prisma.company.create({
+  const companyIdInt = typeof companyId === 'string' ? parseInt(companyId, 10) : companyId
+  if (!Number.isInteger(companyIdInt)) {
+    throw new Error('Invalid company id')
+  }
+
+  return await prisma.center.create({
     data: {
+      companyId: companyIdInt,
       name,
-      companyCode: company_code,
-      contactEmail: contact_email,
+      address,
       phone,
       whatsappPhoneNumberId: whatsapp.phone_number_id || null,
       whatsappAccessToken: whatsapp.access_token || null,
@@ -749,36 +754,40 @@ const createCompany = async (
       whatsappBusinessAccountId: whatsapp.whatsapp_business_account_id || null,
       whatsappBusinessId: whatsapp.business_id || null,
       whatsappConnectedAt: whatsapp.connected_at || null,
-      whatsappConnectionStatus: whatsapp.connection_status || 'connected',
+      whatsappConnectionStatus: whatsapp.connection_status || 'disconnected',
       tokenUpdatedAt: whatsapp.token_updated_at || null,
       tokenExpiresAt: whatsapp.token_expires_at || null,
     },
   })
 }
 
-const getAllCompanies = async () => {
-  return await prisma.company.findMany({
-    where: { isActive: true },
+const getCenterById = async (id) => {
+  const centerId = typeof id === 'string' ? parseInt(id, 10) : id
+  if (!Number.isInteger(centerId)) {
+    throw new Error('Invalid center id')
+  }
+
+  return await prisma.center.findFirst({
+    where: { id: centerId, isActive: true },
+  })
+}
+
+const getCentersByCompanyId = async (companyId) => {
+  const companyIdInt = typeof companyId === 'string' ? parseInt(companyId, 10) : companyId
+  if (!Number.isInteger(companyIdInt)) {
+    throw new Error('Invalid company id')
+  }
+
+  return await prisma.center.findMany({
+    where: { companyId: companyIdInt, isActive: true },
     orderBy: { name: 'asc' },
   })
 }
 
-const getCompanyById = async (id) => {
-  return await prisma.company.findFirst({
-    where: { id, isActive: true },
-  })
-}
-
-const getCompanyByCode = async (company_code) => {
-  return await prisma.company.findFirst({
-    where: { companyCode: company_code, isActive: true },
-  })
-}
-
-const getCompanyByWhatsappPhoneId = async (phone_number_id) => {
+const getCenterByWhatsappPhoneId = async (phone_number_id) => {
   if (!phone_number_id) return null
 
-  return await prisma.company.findFirst({
+  return await prisma.center.findFirst({
     where: {
       whatsappPhoneNumberId: phone_number_id,
       isActive: true,
@@ -786,18 +795,15 @@ const getCompanyByWhatsappPhoneId = async (phone_number_id) => {
   })
 }
 
-const updateCompany = async (id, updates) => {
-  const companyId = typeof id === 'string' ? parseInt(id, 10) : id
-  if (!Number.isInteger(companyId)) {
-    throw new Error('Invalid company id')
+const updateCenter = async (id, updates) => {
+  const centerId = typeof id === 'string' ? parseInt(id, 10) : id
+  if (!Number.isInteger(centerId)) {
+    throw new Error('Invalid center id')
   }
 
   const fieldMap = {
     name: 'name',
-    company_code: 'companyCode',
-    companyCode: 'companyCode',
-    contact_email: 'contactEmail',
-    contactEmail: 'contactEmail',
+    address: 'address',
     phone: 'phone',
     is_active: 'isActive',
     isActive: 'isActive',
@@ -831,23 +837,34 @@ const updateCompany = async (id, updates) => {
   }
 
   if (Object.keys(data).length === 0) {
-    throw new Error('No valid company fields to update')
+    throw new Error('No valid center fields to update')
   }
 
-  return await prisma.company.update({
-    where: { id: companyId },
+  return await prisma.center.update({
+    where: { id: centerId },
     data,
   })
 }
 
-const saveCompanyWhatsappConfig = async (companyId, config) => {
-  const companyIdInt = typeof companyId === 'string' ? parseInt(companyId, 10) : companyId
-  if (!Number.isInteger(companyIdInt)) {
-    throw new Error('Invalid company id')
+const deleteCenter = async (id) => {
+  const centerId = typeof id === 'string' ? parseInt(id, 10) : id
+  if (!Number.isInteger(centerId)) {
+    throw new Error('Invalid center id')
   }
 
-  return await prisma.company.update({
-    where: { id: companyIdInt },
+  return await prisma.center.delete({
+    where: { id: centerId },
+  })
+}
+
+const saveCenterWhatsappConfig = async (centerId, config) => {
+  const centerIdInt = typeof centerId === 'string' ? parseInt(centerId, 10) : centerId
+  if (!Number.isInteger(centerIdInt)) {
+    throw new Error('Invalid center id')
+  }
+
+  return await prisma.center.update({
+    where: { id: centerIdInt },
     data: {
       whatsappPhoneNumberId: config.phone_number_id || null,
       whatsappAccessToken: config.access_token || null,
@@ -857,6 +874,96 @@ const saveCompanyWhatsappConfig = async (companyId, config) => {
       whatsappConnectedAt: config.connected_at || new Date(),
       whatsappConnectionStatus: config.connection_status || 'connected',
     },
+  })
+}
+
+// =====================================================================
+// COMPANIES
+// =====================================================================
+
+const createCompany = async (
+  name,
+  company_code,
+  contact_email = null,
+  phone = null
+) => {
+  return await prisma.company.create({
+    data: {
+      name,
+      companyCode: company_code,
+      contactEmail: contact_email,
+      phone,
+    },
+  })
+}
+
+const getAllCompanies = async () => {
+  return await prisma.company.findMany({
+    where: { isActive: true },
+    orderBy: { name: 'asc' },
+  })
+}
+
+const getCompanyById = async (id) => {
+  return await prisma.company.findFirst({
+    where: { id, isActive: true },
+  })
+}
+
+const getCompanyByCode = async (company_code) => {
+  return await prisma.company.findFirst({
+    where: { companyCode: company_code, isActive: true },
+  })
+}
+
+const getCompanyByWhatsappPhoneId = async (phone_number_id) => {
+  if (!phone_number_id) return null
+
+  // Buscar en Center, luego retornar la Company
+  const center = await prisma.center.findFirst({
+    where: {
+      whatsappPhoneNumberId: phone_number_id,
+      isActive: true,
+    },
+    include: { company: true },
+  })
+
+  return center?.company || null
+}
+
+const updateCompany = async (id, updates) => {
+  const companyId = typeof id === 'string' ? parseInt(id, 10) : id
+  if (!Number.isInteger(companyId)) {
+    throw new Error('Invalid company id')
+  }
+
+  const fieldMap = {
+    name: 'name',
+    company_code: 'companyCode',
+    companyCode: 'companyCode',
+    contact_email: 'contactEmail',
+    contactEmail: 'contactEmail',
+    phone: 'phone',
+    is_active: 'isActive',
+    isActive: 'isActive',
+  }
+
+  const data = {}
+
+  for (const [k, v] of Object.entries(updates)) {
+    const mappedKey = fieldMap[k]
+    if (mappedKey) {
+      data[mappedKey] = v
+    }
+  }
+
+  if (Object.keys(data).length === 0) {
+    throw new Error('No valid company fields to update')
+  }
+
+  return await prisma.company.update({
+    where: { id: companyId },
+    data,
   })
 }
 
@@ -939,13 +1046,19 @@ module.exports = {
   deletePlanning,
   deletePlanningByUserAndDate,
   deletePlanningByUserAndDateRange,
+  createCenter,
+  getCenterById,
+  getCentersByCompanyId,
+  getCenterByWhatsappPhoneId,
+  updateCenter,
+  deleteCenter,
+  saveCenterWhatsappConfig,
   createCompany,
   getAllCompanies,
   getCompanyById,
   getCompanyByCode,
   getCompanyByWhatsappPhoneId,
   updateCompany,
-  saveCompanyWhatsappConfig,
   logSessionAction,
   getSessionActionHistory,
   getFailedSessionActions,
