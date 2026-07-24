@@ -19,8 +19,8 @@ model User {
   role        String  @default("user")
   isActive    Boolean @default(true)
 
-  companyId Int?
-  company   Company? @relation(fields: [companyId], references: [id])
+  centerId Int?
+  center   Center? @relation(fields: [centerId], references: [id])
 
   appointments Appointment[]
   plannings    Planning[]
@@ -42,9 +42,6 @@ model Appointment {
 
   userId Int?
   user   User? @relation(fields: [userId], references: [id])
-
-  companyId Int?
-  company   Company? @relation(fields: [companyId], references: [id])
 
   centerId Int?
   center   Center? @relation(fields: [centerId], references: [id])
@@ -68,9 +65,6 @@ model Planning {
   userId Int
   user   User @relation(fields: [userId], references: [id])
 
-  companyId Int?
-  company   Company? @relation(fields: [companyId], references: [id])
-
   centerId Int?
   center   Center? @relation(fields: [centerId], references: [id])
 
@@ -90,11 +84,6 @@ model Company {
   isActive     Boolean @default(true)
 
   centers      Center[]
-  users        User[]
-  appointments Appointment[]
-  plannings    Planning[]
-
-  sessionActions SessionAction[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -120,6 +109,7 @@ model Center {
   tokenUpdatedAt            DateTime?
   tokenExpiresAt            DateTime?
 
+  users          User[]
   appointments   Appointment[]
   plannings      Planning[]
   sessionActions SessionAction[]
@@ -138,9 +128,6 @@ model SessionAction {
   sessionData  Json?
   errorMessage String?
   success      Boolean @default(true)
-
-  companyId Int?
-  company   Company? @relation(fields: [companyId], references: [id])
 
   centerId Int?
   center   Center? @relation(fields: [centerId], references: [id])

@@ -103,9 +103,9 @@ const getAvailableSlots = async (date, userId = null) => {
   }
 }
 
-const getAvailableUsersForDate = async (date, company_id = null) => {
+const getAvailableUsersForDate = async (date, center_id = null) => {
   const dateObj = new Date(`${date}T00:00:00`)
-  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  const centerIdInt = typeof center_id === 'string' ? parseInt(center_id, 10) : center_id
 
   return await prisma.user.findMany({
     where: {
@@ -119,16 +119,16 @@ const getAvailableUsersForDate = async (date, company_id = null) => {
           type: 'work',
         },
       },
-      ...(companyIdInt !== null && companyIdInt !== undefined && Number.isInteger(companyIdInt) && { companyId: companyIdInt }),
+      ...(centerIdInt !== null && centerIdInt !== undefined && Number.isInteger(centerIdInt) && { centerId: centerIdInt }),
     },
     orderBy: { name: 'asc' },
   })
 }
 
-const getAvailableUsersForDateAndTime = async (date, time, company_id = null) => {
+const getAvailableUsersForDateAndTime = async (date, time, center_id = null) => {
   // time formato: "09:00", "14:30" (hora local España UTC+2)
   const dateObj = new Date(`${date}T00:00:00`)
-  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  const centerIdInt = typeof center_id === 'string' ? parseInt(center_id, 10) : center_id
   const [hours, minutes] = time.split(':').map(Number)
   
   // Crear datetime local y convertir a UTC
@@ -153,7 +153,7 @@ const getAvailableUsersForDateAndTime = async (date, time, company_id = null) =>
           type: 'work',
         },
       },
-      ...(companyIdInt !== null && companyIdInt !== undefined && Number.isInteger(companyIdInt) && { companyId: companyIdInt }),
+      ...(centerIdInt !== null && centerIdInt !== undefined && Number.isInteger(centerIdInt) && { centerId: centerIdInt }),
     },
     include: {
       plannings: {
@@ -200,13 +200,13 @@ const getAvailableUsersForDateAndTime = async (date, time, company_id = null) =>
   return usersInTimeRange.filter(u => !bookedUserIds.has(u.id))
 }
 
-const getLeastBusyUserForDateAndTime = async (date, time, users, company_id = null) => {
+const getLeastBusyUserForDateAndTime = async (date, time, users, center_id = null) => {
   // De una lista de usuarios, retorna el que tenga MENOS citas en esa fecha
   if (!users || users.length === 0) return null
   if (users.length === 1) return users[0]
   
   const dateObj = new Date(`${date}T00:00:00`)
-  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  const centerIdInt = typeof center_id === 'string' ? parseInt(center_id, 10) : center_id
   
   // Contar citas por usuario en esa fecha
   const appointmentCounts = await Promise.all(
@@ -219,7 +219,7 @@ const getLeastBusyUserForDateAndTime = async (date, time, users, company_id = nu
             lt: new Date(dateObj.getTime() + 24 * 60 * 60 * 1000),
           },
           status: { not: 'cancelled' },
-          ...(companyIdInt !== null && { companyId: companyIdInt }),
+          ...(centerIdInt !== null && { centerId: centerIdInt }),
         },
       })
       return { user, count }
@@ -238,18 +238,18 @@ const bookAppointment = async (
   service = 'physio',
   userId = null,
   notes = null,
-  company_id = null,
+  center_id = null,
   customer_name = null
 ) => {
-  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
-  let targetCompanyId = companyIdInt
+  const centerIdInt = typeof center_id === 'string' ? parseInt(center_id, 10) : center_id
+  let targetCenterId = centerIdInt
 
-  if (!targetCompanyId && userId) {
+  if (!targetCenterId && userId) {
     const user = await prisma.user.findUnique({
       where: { id: typeof userId === 'string' ? parseInt(userId, 10) : userId },
-      select: { companyId: true },
+      select: { centerId: true },
     })
-    targetCompanyId = user?.companyId || null
+    targetCenterId = user?.centerId || null
   }
 
   // Check if slot is already booked
@@ -265,8 +265,8 @@ const bookAppointment = async (
     throw new Error('Slot ocupado')
   }
 
-  if (!targetCompanyId) {
-    throw new Error('Invalid company for appointment')
+  if (!targetCenterId) {
+    throw new Error('Invalid center for appointment')
   }
 
   // Generate custom_id
@@ -283,7 +283,7 @@ const bookAppointment = async (
       customerName: customer_name,
       datetime: new Date(datetime),
       userId,
-      companyId: targetCompanyId,
+      centerId: targetCenterId,
       service,
       notes,
       customId: custom_id,
@@ -305,11 +305,11 @@ const getLastCustomerNameByPhone = async (phone) => {
   return appointment?.customerName || null
 }
 
-const getAllAppointments = async (company_id = null) => {
-  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+const getAllAppointments = async (center_id = null) => {
+  const centerIdInt = typeof center_id === 'string' ? parseInt(center_id, 10) : center_id
   return await prisma.appointment.findMany({
     where: {
-      ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
+      ...(centerIdInt !== null && centerIdInt !== undefined && { centerId: centerIdInt }),
     },
     include: {
       user: {
@@ -323,17 +323,17 @@ const getAllAppointments = async (company_id = null) => {
   })
 }
 
-const getAppointmentById = async (id, company_id = null) => {
+const getAppointmentById = async (id, center_id = null) => {
   const appointmentId = typeof id === 'string' ? parseInt(id, 10) : id
   if (!Number.isInteger(appointmentId)) {
     throw new Error('Invalid appointment id')
   }
 
-  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  const centerIdInt = typeof center_id === 'string' ? parseInt(center_id, 10) : center_id
   return await prisma.appointment.findFirst({
     where: {
       id: appointmentId,
-      ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
+      ...(centerIdInt !== null && centerIdInt !== undefined && { centerId: centerIdInt }),
     },
     include: {
       user: {
@@ -377,22 +377,22 @@ const deleteAppointment = async (id) => {
   })
 }
 
-const getAppointmentByCustomId = async (custom_id, company_id = null) => {
+const getAppointmentByCustomId = async (custom_id, center_id = null) => {
   return await prisma.appointment.findFirst({
     where: {
       customId: custom_id,
       status: { not: 'cancelled' },
-      ...(company_id !== null && { companyId: company_id }),
+      ...(center_id !== null && { centerId: center_id }),
     },
   })
 }
 
-const cancelAppointmentByCustomId = async (custom_id, company_id = null) => {
+const cancelAppointmentByCustomId = async (custom_id, center_id = null) => {
   return await prisma.appointment.updateMany({
     where: {
       customId: custom_id,
       status: { not: 'cancelled' },
-      ...(company_id !== null && { companyId: company_id }),
+      ...(center_id !== null && { centerId: center_id }),
     },
     data: {
       status: 'cancelled',
@@ -405,17 +405,17 @@ const cancelAppointmentByCustomId = async (custom_id, company_id = null) => {
 // USERS
 // =====================================================================
 
-const getAllUsers = async (company_id = null) => {
+const getAllUsers = async (center_id = null) => {
   return await prisma.user.findMany({
     where: {
       isActive: true,
-      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
+      ...(center_id !== null && center_id !== undefined && { centerId: center_id }),
     },
     orderBy: { name: 'asc' },
   })
 }
 
-const getUserById = async (id, company_id = null) => {
+const getUserById = async (id, center_id = null) => {
   const userId = typeof id === 'string' ? parseInt(id, 10) : id
   if (!Number.isInteger(userId)) {
     throw new Error('Invalid user id')
@@ -424,7 +424,7 @@ const getUserById = async (id, company_id = null) => {
   return await prisma.user.findFirst({
     where: {
       id: userId,
-      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
+      ...(center_id !== null && center_id !== undefined && { centerId: center_id }),
     },
   })
 }
@@ -437,7 +437,7 @@ const createUser = async (
   phone = null,
   type = null,
   specialties = null,
-  company_id = null
+  center_id = null
 ) => {
   return await prisma.user.create({
     data: {
@@ -448,7 +448,7 @@ const createUser = async (
       phone,
       type,
       specialties,
-      companyId: company_id,
+      centerId: center_id,
     },
   })
 }
@@ -469,6 +469,7 @@ const updateUser = async (id, updates) => {
     specialties: 'specialties',
     is_active: 'isActive',
     isActive: 'isActive',
+    center_id: 'centerId',
   }
 
   const data = {}
@@ -514,9 +515,9 @@ const getUserByUsername = async (username) => {
 // PLANNING
 // =====================================================================
 
-const getPlanningByUserAndDate = async (userId, date, company_id = null) => {
+const getPlanningByUserAndDate = async (userId, date, center_id = null) => {
   const userIdInt = typeof userId === 'string' ? parseInt(userId, 10) : userId
-  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  const centerIdInt = typeof center_id === 'string' ? parseInt(center_id, 10) : center_id
   if (!Number.isInteger(userIdInt)) {
     throw new Error('Invalid userId')
   }
@@ -530,7 +531,7 @@ const getPlanningByUserAndDate = async (userId, date, company_id = null) => {
         gte: dateObj,
         lt: new Date(dateObj.getTime() + 24 * 60 * 60 * 1000),
       },
-      ...(companyIdInt !== null && companyIdInt !== undefined && Number.isInteger(companyIdInt) && { companyId: companyIdInt }),
+      ...(centerIdInt !== null && centerIdInt !== undefined && Number.isInteger(centerIdInt) && { centerId: centerIdInt }),
     },
   })
 }
@@ -539,10 +540,10 @@ const getPlanningByUser = async (
   userId,
   startDate = null,
   endDate = null,
-  company_id = null
+  center_id = null
 ) => {
   const userIdInt = typeof userId === 'string' ? parseInt(userId, 10) : userId
-  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  const centerIdInt = typeof center_id === 'string' ? parseInt(center_id, 10) : center_id
   if (!Number.isInteger(userIdInt)) {
     throw new Error('Invalid userId')
   }
@@ -552,14 +553,14 @@ const getPlanningByUser = async (
       userId: userIdInt,
       ...(startDate && { date: { gte: new Date(`${startDate}T00:00:00`) } }),
       ...(endDate && { date: { lte: new Date(`${endDate}T23:59:59`) } }),
-      ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
+      ...(centerIdInt !== null && centerIdInt !== undefined && { centerId: centerIdInt }),
     },
   })
 }
 
-const getPlanningByUserAndDateRange = async (userId, startDate, endDate, company_id = null) => {
+const getPlanningByUserAndDateRange = async (userId, startDate, endDate, center_id = null) => {
   const userIdInt = typeof userId === 'string' ? parseInt(userId, 10) : userId
-  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  const centerIdInt = typeof center_id === 'string' ? parseInt(center_id, 10) : center_id
   if (!Number.isInteger(userIdInt)) {
     throw new Error('Invalid userId')
   }
@@ -574,15 +575,15 @@ const getPlanningByUserAndDateRange = async (userId, startDate, endDate, company
         gte: startDateObj,
         lte: endDateObj,
       },
-      ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
+      ...(centerIdInt !== null && centerIdInt !== undefined && { centerId: centerIdInt }),
     },
     orderBy: [{ date: 'asc' }],
   })
 }
 
-const getPlanningById = async (id, company_id = null) => {
+const getPlanningById = async (id, center_id = null) => {
   const planningId = typeof id === 'string' ? parseInt(id, 10) : id
-  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  const centerIdInt = typeof center_id === 'string' ? parseInt(center_id, 10) : center_id
   if (!Number.isInteger(planningId)) {
     throw new Error('Invalid planning id')
   }
@@ -590,17 +591,17 @@ const getPlanningById = async (id, company_id = null) => {
   return await prisma.planning.findFirst({
     where: {
       id: planningId,
-      ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
+      ...(centerIdInt !== null && centerIdInt !== undefined && { centerId: centerIdInt }),
     },
   })
 }
 
-const getAllPlanning = async (startDate = null, endDate = null, company_id = null) => {
+const getAllPlanning = async (startDate = null, endDate = null, center_id = null) => {
   return await prisma.planning.findMany({
     where: {
       ...(startDate && { date: { gte: new Date(`${startDate}T00:00:00`) } }),
       ...(endDate && { date: { lte: new Date(`${endDate}T23:59:59`) } }),
-      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
+      ...(center_id !== null && center_id !== undefined && { centerId: center_id }),
     },
     orderBy: [{ userId: 'asc' }, { date: 'asc' }],
   })
@@ -611,12 +612,12 @@ const createPlanning = async (
   date,
   type,
   notes = null,
-  company_id = null,
+  center_id = null,
   start_time = null,
   end_time = null
 ) => {
   const userIdInt = typeof userId === 'string' ? parseInt(userId, 10) : userId
-  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  const centerIdInt = typeof center_id === 'string' ? parseInt(center_id, 10) : center_id
   if (!Number.isInteger(userIdInt)) {
     throw new Error('Invalid userId')
   }
@@ -641,7 +642,7 @@ const createPlanning = async (
       date: dateObj,
       type,
       notes,
-      companyId: companyIdInt,
+      centerId: centerIdInt,
       startTime: start_time,
       endTime: end_time,
     },
@@ -683,9 +684,9 @@ const deletePlanning = async (id) => {
   })
 }
 
-const deletePlanningByUserAndDate = async (userId, date, company_id = null) => {
+const deletePlanningByUserAndDate = async (userId, date, center_id = null) => {
   const userIdInt = typeof userId === 'string' ? parseInt(userId, 10) : userId
-  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  const centerIdInt = typeof center_id === 'string' ? parseInt(center_id, 10) : center_id
   if (!Number.isInteger(userIdInt)) {
     throw new Error('Invalid userId')
   }
@@ -695,7 +696,7 @@ const deletePlanningByUserAndDate = async (userId, date, company_id = null) => {
   return await prisma.planning.deleteMany({
     where: {
       userId: userIdInt,
-      ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
+      ...(centerIdInt !== null && centerIdInt !== undefined && { centerId: centerIdInt }),
       date: {
         gte: dateObj,
         lt: new Date(dateObj.getTime() + 24 * 60 * 60 * 1000),
@@ -704,9 +705,9 @@ const deletePlanningByUserAndDate = async (userId, date, company_id = null) => {
   })
 }
 
-const deletePlanningByUserAndDateRange = async (userId, startDate, endDate, company_id = null) => {
+const deletePlanningByUserAndDateRange = async (userId, startDate, endDate, center_id = null) => {
   const userIdInt = typeof userId === 'string' ? parseInt(userId, 10) : userId
-  const companyIdInt = typeof company_id === 'string' ? parseInt(company_id, 10) : company_id
+  const centerIdInt = typeof center_id === 'string' ? parseInt(center_id, 10) : center_id
   if (!Number.isInteger(userIdInt)) {
     throw new Error('Invalid userId')
   }
@@ -717,7 +718,7 @@ const deletePlanningByUserAndDateRange = async (userId, startDate, endDate, comp
   return await prisma.planning.deleteMany({
     where: {
       userId: userIdInt,
-      ...(companyIdInt !== null && companyIdInt !== undefined && { companyId: companyIdInt }),
+      ...(centerIdInt !== null && centerIdInt !== undefined && { centerId: centerIdInt }),
       date: {
         gte: startDateObj,
         lte: endDateObj,
@@ -978,12 +979,12 @@ const logSessionAction = async (
   sessionData = null,
   errorMsg = null,
   success = true,
-  company_id = null
+  center_id = null
 ) => {
   return await prisma.sessionAction.create({
     data: {
       phone,
-      companyId: company_id,
+      centerId: center_id,
       action,
       step,
       sessionData: sessionData || null,
@@ -993,22 +994,22 @@ const logSessionAction = async (
   })
 }
 
-const getSessionActionHistory = async (phone, company_id = null, limit = 50) => {
+const getSessionActionHistory = async (phone, center_id = null, limit = 50) => {
   return await prisma.sessionAction.findMany({
     where: {
       phone,
-      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
+      ...(center_id !== null && center_id !== undefined && { centerId: center_id }),
     },
     orderBy: { createdAt: 'desc' },
     take: limit,
   })
 }
 
-const getFailedSessionActions = async (company_id = null, limit = 100) => {
+const getFailedSessionActions = async (center_id = null, limit = 100) => {
   return await prisma.sessionAction.findMany({
     where: {
       success: false,
-      ...(company_id !== null && company_id !== undefined && { companyId: company_id }),
+      ...(center_id !== null && center_id !== undefined && { centerId: center_id }),
     },
     orderBy: { createdAt: 'desc' },
     take: limit,

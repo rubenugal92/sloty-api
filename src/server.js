@@ -115,7 +115,7 @@ const formatAppointment = (a) => {
     user_id: a.userId || (a.user && a.user.id) || null,
     user_name: (a.user && (a.user.name || a.user.user_name)) || null,
     user_specialties: (a.user && (a.user.specialties || a.user.specialities)) || null,
-    company_id: a.companyId || null,
+    center_id: a.centerId || null,
     created_at: a.createdAt || null,
     updated_at: a.updatedAt || null,
   }
@@ -132,7 +132,7 @@ const formatPlanning = (p) => {
     end_time: p.endTime || null,
     user_id: p.userId || null,
     user_name: (p.user && (p.user.name || p.user.user_name)) || null,
-    company_id: p.companyId || null,
+    center_id: p.centerId || null,
     created_at: p.createdAt || null,
     updated_at: p.updatedAt || null,
   }
@@ -150,7 +150,7 @@ const formatUser = (u) => {
     specialties: u.specialties || null,
     role: u.role || null,
     is_active: typeof u.isActive === 'boolean' ? u.isActive : (u.is_active ?? null),
-    company_id: u.companyId || u.company_id || null,
+    center_id: u.centerId || u.center_id || null,
     created_at: u.createdAt || null,
     updated_at: u.updatedAt || null,
   }
@@ -272,41 +272,30 @@ app.post('/webhook', async (req, res) => {
         for (const change of entry.changes || []) {
           if (change.field !== 'messages') continue;
 
-          // Resolver el tenant a partir del phone_number_id que envía Meta.
-          // Buscar primero en Center (nuevo), luego fallback a Company (legacy) si la company no se encuentra.
+          // Resolver centerId a partir del phone_number_id que envía Meta.
           const phoneNumberId = change.value?.metadata?.phone_number_id || null;
-          let companyId, credentials;
+          let centerId, credentials;
           if (phoneNumberId) {
-            // Buscar en Center primero
+            // Buscar en Center
             const center = await getCenterByWhatsappPhoneId(phoneNumberId);
             if (center) {
-              companyId = center.companyId;
+              centerId = center.id;
               credentials = {
                 phone_number_id: center.whatsappPhoneNumberId || center.whatsapp_phone_number_id,
                 access_token: center.whatsappAccessToken || center.whatsapp_access_token,
               };
-            } else {
-              // Fallback: buscar en Company (legacy)
-              const company = await getCompanyByWhatsappPhoneId(phoneNumberId);
-              if (company) {
-                companyId = company.id;
-                credentials = {
-                  phone_number_id: company.whatsappPhoneNumberId || company.whatsapp_phone_number_id,
-                  access_token: company.whatsappAccessToken || company.whatsapp_access_token,
-                };
-              }
             }
           }
-          if (!companyId) {
-            companyId = parseInt(process.env.DEFAULT_WHATSAPP_COMPANY_ID || '1', 10);
-            credentials = null; // bot/whatsapp.js caerán a env vars
+          if (!centerId) {
+            centerId = parseInt(process.env.DEFAULT_WHATSAPP_CENTER_ID || '1', 10);
+            credentials = null;
           }
 
           for (const message of change.value.messages || []) {
             if (message.type !== 'text') continue;
             const from = message.from;
             const text = message.text.body;
-            await handleMessage(from, text, companyId, credentials);
+            await handleMessage(from, text, centerId, credentials);
           }
         }
       }
@@ -547,16 +536,10 @@ app.post('/auth/login', async (req, res) => {
 
 app.get('/api/appointments', verifyToken, async (req, res) => {
   try {
-    // Los usuarios normales solo ven sus citas
-    // Los admins ven todas las citas de su empresa
-    let company_id = req.user.company_id;
+    // Priorizar center_id sobre company_id
+    let center_id = req.query.center_id ? parseInt(req.query.center_id, 10) : null;
     
-    // Si es superadmin sin company específica, puede ver todo
-    if (req.user.role === 'superadmin' && req.query.company_id) {
-      company_id = parseInt(req.query.company_id, 10);
-    }
-    
-    const appointments = await getAllAppointments(company_id);
+    const appointments = await getAllAppointments(center_id);
     res.json(appointments.map(formatAppointment));
   } catch (err) {
     console.error(err);
@@ -567,7 +550,8 @@ app.get('/api/appointments', verifyToken, async (req, res) => {
 app.get('/api/appointments/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const appointment = await getAppointmentById(id, resolveCompanyScope(req));
+    const center_id = req.query.center_id ? parseInt(req.query.center_id, 10) : null;
+    const appointment = await getAppointmentById(id, center_id);
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
@@ -580,23 +564,22 @@ app.get('/api/appointments/:id', verifyToken, async (req, res) => {
 
 app.post('/api/appointments', verifyToken, async (req, res) => {
   try {
-    const { phone, customer_name, datetime, service, status, notes, duration, user_id, company_id } = req.body;
+    const { phone, customer_name, datetime, service, status, notes, duration, user_id, center_id } = req.body;
 
-    if (!phone || !datetime || !user_id) {
-      return res.status(400).json({ error: 'phone, datetime, and user_id are required' });
+    if (!phone || !datetime || !user_id || !center_id) {
+      return res.status(400).json({ error: 'phone, datetime, user_id, and center_id are required' });
     }
 
-    const targetCompanyId = req.user.role === 'superadmin' ? company_id || req.user.company_id : req.user.company_id;
-    const appointment = await bookAppointment(phone, datetime, service, user_id, notes, targetCompanyId, customer_name);
+    const appointment = await bookAppointment(phone, datetime, service, user_id, notes, center_id, customer_name);
     
-    // Broadcast WebSocket event to employee + all company users (admins/managers)
-    const companyUsers = await prisma.user.findMany({
-      where: { companyId: targetCompanyId, isActive: true },
+    // Broadcast WebSocket event to employee + all center users
+    const centerUsers = await prisma.user.findMany({
+      where: { centerId: center_id, isActive: true },
       select: { id: true },
     });
     const targetUserIds = [
       user_id,
-      ...companyUsers.map(u => u.id).filter(id => id !== user_id)
+      ...centerUsers.map(u => u.id).filter(id => id !== user_id)
     ];
     console.log(`💾 Appointment created. Broadcasting to users:`, targetUserIds);
     broadcastAppointmentCreated(formatAppointment(appointment), targetUserIds);
@@ -614,13 +597,14 @@ app.post('/api/appointments', verifyToken, async (req, res) => {
 app.put('/api/appointments/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
+    const center_id = req.query.center_id ? parseInt(req.query.center_id, 10) : null;
     const updates = req.body;
 
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: 'No updates provided' });
     }
 
-    const appointment = await getAppointmentById(id, resolveCompanyScope(req));
+    const appointment = await getAppointmentById(id, center_id);
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
@@ -636,7 +620,8 @@ app.put('/api/appointments/:id', verifyToken, async (req, res) => {
 app.delete('/api/appointments/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const appointment = await getAppointmentById(id, resolveCompanyScope(req));
+    const center_id = req.query.center_id ? parseInt(req.query.center_id, 10) : null;
+    const appointment = await getAppointmentById(id, center_id);
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
@@ -644,14 +629,14 @@ app.delete('/api/appointments/:id', verifyToken, async (req, res) => {
     const appointmentId = parseInt(id, 10);
     const deleted = await deleteAppointment(id);
     
-    // Broadcast WebSocket event to employee + all company users
-    const companyUsers = await prisma.user.findMany({
-      where: { companyId: appointment.user?.companyId || req.user.company_id, isActive: true },
+    // Broadcast WebSocket event to employee + all center users
+    const centerUsers = await prisma.user.findMany({
+      where: { centerId: appointment.centerId, isActive: true },
       select: { id: true },
     });
     const targetUserIds = [
       appointment.userId,
-      ...companyUsers.map(u => u.id).filter(id => id !== appointment.userId)
+      ...centerUsers.map(u => u.id).filter(id => id !== appointment.userId)
     ];
     broadcastAppointmentDeleted(appointmentId, targetUserIds);
     
@@ -694,12 +679,9 @@ app.get('/api/slots/:date', verifyToken, async (req, res) => {
 
 app.get('/api/users', verifyToken, async (req, res) => {
   try {
-    let company_id = req.user.company_id;
-    if (req.user.role === 'superadmin' && req.query.company_id) {
-      company_id = parseInt(req.query.company_id, 10);
-    }
+    const center_id = req.query.center_id ? parseInt(req.query.center_id, 10) : null;
 
-    const users = await getAllUsers(company_id);
+    const users = await getAllUsers(center_id);
     res.json(users.map(formatUser));
   } catch (err) {
     console.error(err);
@@ -714,17 +696,14 @@ app.get('/api/users/available', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'date is required' });
     }
 
-    let company_id = req.user.company_id;
-    if (req.user.role === 'superadmin' && req.query.company_id) {
-      company_id = parseInt(req.query.company_id, 10);
-    }
+    const center_id = req.query.center_id ? parseInt(req.query.center_id, 10) : null;
 
     // Si time está presente, filtrar también por horario; si no, retornar solo por fecha
     let users;
     if (time) {
-      users = await getAvailableUsersForDateAndTime(date, time, company_id);
+      users = await getAvailableUsersForDateAndTime(date, time, center_id);
     } else {
-      users = await getAvailableUsersForDate(date, company_id);
+      users = await getAvailableUsersForDate(date, center_id);
     }
     res.json(users.map(formatUser));
   } catch (err) {
@@ -740,19 +719,16 @@ app.get('/api/users/least-busy', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'date and time are required' });
     }
 
-    let company_id = req.user.company_id;
-    if (req.user.role === 'superadmin' && req.query.company_id) {
-      company_id = parseInt(req.query.company_id, 10);
-    }
+    const center_id = req.query.center_id ? parseInt(req.query.center_id, 10) : null;
 
     // Obtener empleados disponibles para esa fecha+hora
-    const availableUsers = await getAvailableUsersForDateAndTime(date, time, company_id);
+    const availableUsers = await getAvailableUsersForDateAndTime(date, time, center_id);
     if (!availableUsers.length) {
       return res.status(404).json({ error: 'No available users for this date and time' });
     }
 
     // Obtener el menos ocupado
-    const leastBusy = await getLeastBusyUserForDateAndTime(date, time, availableUsers, company_id);
+    const leastBusy = await getLeastBusyUserForDateAndTime(date, time, availableUsers, center_id);
     if (!leastBusy) {
       return res.status(404).json({ error: 'Could not determine least busy user' });
     }
@@ -767,7 +743,8 @@ app.get('/api/users/least-busy', verifyToken, async (req, res) => {
 app.get('/api/users/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const user = await getUserById(id, resolveCompanyScope(req));
+    const center_id = req.query.center_id ? parseInt(req.query.center_id, 10) : null;
+    const user = await getUserById(id, center_id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -780,19 +757,14 @@ app.get('/api/users/:id', verifyToken, async (req, res) => {
 
 app.post('/api/users', verifyToken, async (req, res) => {
   try {
-    const { username, name, email, phone, type, specialties, password, company_id } = req.body;
+    const { username, name, email, phone, type, specialties, password, center_id } = req.body;
 
-    if (!username || !name || !email) {
-      return res.status(400).json({ error: 'Username, name and email are required' });
-    }
-
-    const targetCompanyId = req.user.role === 'superadmin' ? company_id || req.user.company_id : req.user.company_id;
-    if (req.user.role === 'superadmin' && !targetCompanyId) {
-      return res.status(400).json({ error: 'company_id is required for superadmin user creation' });
+    if (!username || !name || !email || !center_id) {
+      return res.status(400).json({ error: 'Username, name, email, and center_id are required' });
     }
 
     const hashedPassword = password ? await bcrypt.hash(password, 10) : await bcrypt.hash('defaultPass123', 10);
-    const user = await createUser(username, name, email, hashedPassword, phone, type, specialties, targetCompanyId);
+    const user = await createUser(username, name, email, hashedPassword, phone, type, specialties, center_id);
     res.status(201).json(formatUser(user));
   } catch (err) {
     console.error('Error creating user:', err);
@@ -812,7 +784,9 @@ app.put('/api/users/:id', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'No updates provided' });
     }
 
-    const user = await getUserById(id, resolveCompanyScope(req));
+    // Si se actualiza center_id, usar ese; si no, tomar del query (backward compatibility)
+    const center_id = updates.center_id || (req.query.center_id ? parseInt(req.query.center_id, 10) : null);
+    const user = await getUserById(id, center_id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -839,7 +813,8 @@ app.put('/api/users/:id', verifyToken, async (req, res) => {
 app.delete('/api/users/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const user = await getUserById(id, resolveCompanyScope(req));
+    const center_id = req.query.center_id ? parseInt(req.query.center_id, 10) : null;
+    const user = await getUserById(id, center_id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -857,13 +832,10 @@ app.delete('/api/users/:id', verifyToken, async (req, res) => {
 app.get('/api/planning', verifyToken, async (req, res) => {
   try {
     const { user_id, start_date, end_date } = req.query;
-    let company_id = req.user.company_id;
-    if (req.user.role === 'superadmin' && req.query.company_id) {
-      company_id = parseInt(req.query.company_id, 10);
-    }
+    const center_id = req.query.center_id ? parseInt(req.query.center_id, 10) : null;
 
-      if (req.user.role === 'admin' || req.user.role === 'superadmin') {
-      const planning = await getAllPlanning(start_date, end_date, company_id);
+    if (req.user.role === 'admin' || req.user.role === 'superadmin') {
+      const planning = await getAllPlanning(start_date, end_date, center_id);
       return res.json(planning.map(formatPlanning));
     }
 
@@ -871,7 +843,7 @@ app.get('/api/planning', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'user_id is required' });
     }
 
-    const planning = await getPlanningByUser(user_id, start_date, end_date, company_id);
+    const planning = await getPlanningByUser(user_id, start_date, end_date, center_id);
     res.json(planning.map(formatPlanning));
   } catch (err) {
     console.error(err);
@@ -883,16 +855,13 @@ app.get('/api/planning/user/:user_id', verifyToken, async (req, res) => {
   try {
     const { user_id } = req.params;
     const { start_date, end_date } = req.query;
-    let company_id = req.user.company_id;
-    if (req.user.role === 'superadmin' && req.query.company_id) {
-      company_id = parseInt(req.query.company_id, 10);
-    }
+    const center_id = req.query.center_id ? parseInt(req.query.center_id, 10) : null;
 
     if (req.user.role !== 'admin' && req.user.role !== 'superadmin' && req.user.id !== parseInt(user_id)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
-    const planning = await getPlanningByUser(user_id, start_date, end_date, company_id);
+    const planning = await getPlanningByUser(user_id, start_date, end_date, center_id);
     res.json(planning.map(formatPlanning));
   } catch (err) {
     console.error(err);
@@ -902,18 +871,17 @@ app.get('/api/planning/user/:user_id', verifyToken, async (req, res) => {
 
 app.post('/api/planning', verifyToken, async (req, res) => {
   try {
-    const { user_id, date, type, notes, company_id, start_time, end_time } = req.body;
+    const { user_id, date, type, notes, center_id, start_time, end_time } = req.body;
 
-    if (!user_id || !date || !type) {
-      return res.status(400).json({ error: 'user_id, date, and type are required' });
+    if (!user_id || !date || !type || !center_id) {
+      return res.status(400).json({ error: 'user_id, date, type, and center_id are required' });
     }
 
     if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only admin can create planning' });
     }
 
-    const targetCompanyId = req.user.role === 'superadmin' ? company_id || req.user.company_id : req.user.company_id;
-    const planning = await createPlanning(user_id, date, type, notes, targetCompanyId, start_time || null, end_time || null);
+    const planning = await createPlanning(user_id, date, type, notes, center_id, start_time || null, end_time || null);
     res.status(201).json(formatPlanning(planning));
   } catch (err) {
     console.error(err);
@@ -924,17 +892,15 @@ app.post('/api/planning', verifyToken, async (req, res) => {
 // ===================== PLANNING BULK (RANGO DE FECHAS) =====================
 app.post('/api/planning/bulk', verifyToken, async (req, res) => {
   try {
-    const { user_id, start_date, end_date, type, notes, include_weekends, company_id, start_time, end_time } = req.body;
+    const { user_id, start_date, end_date, type, notes, include_weekends, center_id, start_time, end_time } = req.body;
 
-    if (!user_id || !start_date || !end_date || !type) {
-      return res.status(400).json({ error: 'user_id, start_date, end_date, and type are required' });
+    if (!user_id || !start_date || !end_date || !type || !center_id) {
+      return res.status(400).json({ error: 'user_id, start_date, end_date, type, and center_id are required' });
     }
 
     if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only admin can create planning' });
     }
-
-    const targetCompanyId = req.user.role === 'superadmin' ? company_id || req.user.company_id : req.user.company_id;
 
     const start = new Date(start_date);
     const end = new Date(end_date);
@@ -950,7 +916,7 @@ app.post('/api/planning/bulk', verifyToken, async (req, res) => {
 
     const createdPlannings = [];
     for (const date of dates) {
-      const planning = await createPlanning(user_id, date, type, notes, targetCompanyId, start_time || null, end_time || null);
+      const planning = await createPlanning(user_id, date, type, notes, center_id, start_time || null, end_time || null);
       createdPlannings.push(planning);
     }
 
@@ -967,27 +933,23 @@ app.post('/api/planning/bulk', verifyToken, async (req, res) => {
 
 app.delete('/api/planning/range', verifyToken, async (req, res) => {
   try {
-    const { user_id, start_date, end_date, company_id } = req.query;
+    const { user_id, start_date, end_date, center_id } = req.query;
 
-    if (!user_id || !start_date || !end_date) {
-      return res.status(400).json({ error: 'user_id, start_date, and end_date are required' });
+    if (!user_id || !start_date || !end_date || !center_id) {
+      return res.status(400).json({ error: 'user_id, start_date, end_date, and center_id are required' });
     }
 
     if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only admin can delete planning' });
     }
 
-    let targetCompanyId = req.user.company_id;
-    if (req.user.role === 'superadmin' && company_id) {
-      targetCompanyId = parseInt(company_id, 10);
-    }
-
-    const plannings = await getPlanningByUserAndDateRange(user_id, start_date, end_date, targetCompanyId);
+    const centerIdInt = parseInt(center_id, 10);
+    const plannings = await getPlanningByUserAndDateRange(user_id, start_date, end_date, centerIdInt);
     if (!plannings.length) {
       return res.status(404).json({ error: 'No plannings found for that range' });
     }
 
-    const deleted = await deletePlanningByUserAndDateRange(user_id, start_date, end_date, targetCompanyId);
+    const deleted = await deletePlanningByUserAndDateRange(user_id, start_date, end_date, centerIdInt);
     res.json({
       message: `Deleted ${deleted.count} planning entries`,
       count: deleted.count,
@@ -1002,6 +964,7 @@ app.delete('/api/planning/range', verifyToken, async (req, res) => {
 app.put('/api/planning/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
+    const center_id = req.query.center_id ? parseInt(req.query.center_id, 10) : null;
     const updates = req.body;
 
     if (Object.keys(updates).length === 0) {
@@ -1012,7 +975,7 @@ app.put('/api/planning/:id', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only admin can update planning' });
     }
 
-    const planning = await getPlanningById(id);
+    const planning = await getPlanningById(id, center_id);
     if (!planning) {
       return res.status(404).json({ error: 'Planning not found' });
     }
@@ -1027,17 +990,13 @@ app.put('/api/planning/:id', verifyToken, async (req, res) => {
 app.delete('/api/planning/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
+    const center_id = req.query.center_id ? parseInt(req.query.center_id, 10) : null;
 
     if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only admin can delete planning' });
     }
 
-    let company_id = req.user.company_id;
-    if (req.user.role === 'superadmin' && req.query.company_id) {
-      company_id = parseInt(req.query.company_id, 10);
-    }
-
-    const planning = await getPlanningById(id, company_id);
+    const planning = await getPlanningById(id, center_id);
     if (!planning) {
       return res.status(404).json({ error: 'Planning not found' });
     }
