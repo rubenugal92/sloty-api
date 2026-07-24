@@ -326,7 +326,7 @@ const M = {
 // =====================================================================
 
 // Función auxiliar para manejar "volver atrás"
-const handleBackIntent = async (from, text, session, companyId) => {
+const handleBackIntent = async (from, text, session, centerId) => {
   if (matchIntent(text, 'back') || matchIntent(text, 'restart')) {
     // Registrar la acción de "volver atrás"
     await logSessionAction(
@@ -336,7 +336,7 @@ const handleBackIntent = async (from, text, session, companyId) => {
       session,
       null,
       true,
-      companyId
+      centerId
     ).catch(err => console.error('[bot] logging error:', err));
 
     if (matchIntent(text, 'restart')) {
@@ -356,7 +356,7 @@ const handleBackIntent = async (from, text, session, companyId) => {
         await reply(from, M.welcome());
         return 'back';
       case 'selecting-time':
-        setSession(from, { step: 'awaiting-date', companyId, customerName: session.customerName });
+        setSession(from, { step: 'awaiting-date', centerId, customerName: session.customerName });
         await reply(from, M.askDate(session.customerName));
         return 'back';
       case 'selecting-user':
@@ -364,7 +364,7 @@ const handleBackIntent = async (from, text, session, companyId) => {
           step: 'selecting-time',
           date: session.date,
           slots: session.slots,
-          companyId,
+          centerId,
           customerName: session.customerName
         });
         await reply(from, M.askTime(formatReadableDate(session.date)));
@@ -377,7 +377,7 @@ const handleBackIntent = async (from, text, session, companyId) => {
           date: session.date,
           time: session.time,
           availableUsers: session.availableUsers,
-          companyId,
+          centerId,
           customerName: session.customerName
         });
         const list = session.availableUsers
@@ -392,7 +392,7 @@ const handleBackIntent = async (from, text, session, companyId) => {
           userName: session.userName,
           date: session.date,
           time: session.time,
-          companyId,
+          centerId,
           customerName: session.customerName
         });
         await reply(from, M.askNotes());
@@ -412,19 +412,19 @@ const handleBackIntent = async (from, text, session, companyId) => {
 // HANDLERS POR STEP
 // =====================================================================
 
-const handleIdle = async (from, text, companyId) => {
+const handleIdle = async (from, text, centerId) => {
   const possibleDate = parseDateFromText(text);
 
   if (matchIntent(text, 'book') || possibleDate) {
     // Siempre pedir nombre (no asumir que recordamos al cliente)
     // El cliente puede cambiar o ser primera vez que contacta
-    setSession(from, { step: 'asking-name', companyId, pendingDate: possibleDate || null });
+    setSession(from, { step: 'asking-name', centerId, pendingDate: possibleDate || null });
     await reply(from, M.askName());
     return;
   }
 
   if (matchIntent(text, 'cancel')) {
-    setSession(from, { step: 'asking-cancel-id', companyId });
+    setSession(from, { step: 'asking-cancel-id', centerId });
     await reply(from, M.askCancelId());
     return;
   }
@@ -432,9 +432,9 @@ const handleIdle = async (from, text, companyId) => {
   await reply(from, M.welcome());
 };
 
-const handleAskingName = async (from, text, companyId, session) => {
+const handleAskingName = async (from, text, centerId, session) => {
   // Permitir volver atrás
-  const backResult = await handleBackIntent(from, text, session, companyId);
+  const backResult = await handleBackIntent(from, text, session, centerId);
   if (backResult) return;
 
   const name = text.trim().replace(/\s+/g, ' ');
@@ -444,16 +444,16 @@ const handleAskingName = async (from, text, companyId, session) => {
   }
   // Si traíamos una fecha pendiente del primer mensaje, vamos directos a procesarla
   if (session.pendingDate) {
-    setSession(from, { step: 'awaiting-date', companyId, customerName: name, pendingDate: null });
-    return handleAwaitingDate(from, session.pendingDate, companyId, getSession(from));
+    setSession(from, { step: 'awaiting-date', centerId, customerName: name, pendingDate: null });
+    return handleAwaitingDate(from, session.pendingDate, centerId, getSession(from));
   }
-  setSession(from, { step: 'awaiting-date', companyId, customerName: name });
+  setSession(from, { step: 'awaiting-date', centerId, customerName: name });
   await reply(from, M.askDate(name));
 };
 
-const handleAwaitingDate = async (from, text, companyId, session) => {
+const handleAwaitingDate = async (from, text, centerId, session) => {
   // Permitir volver atrás
-  const backResult = await handleBackIntent(from, text, session, companyId);
+  const backResult = await handleBackIntent(from, text, session, centerId);
   if (backResult) return;
 
   const date = parseDateFromText(text);
@@ -468,14 +468,14 @@ const handleAwaitingDate = async (from, text, companyId, session) => {
     return;
   }
 
-  setSession(from, { step: 'selecting-time', date, slots, companyId, customerName: session.customerName });
+  setSession(from, { step: 'selecting-time', date, slots, centerId, customerName: session.customerName });
   const normalizedSlots = slots.map(s => s.slice(0, 5));
   await reply(from, M.askTime(formatReadableDate(date)));
 };
 
-const handleSelectingUser = async (from, text, companyId, session) => {
+const handleSelectingUser = async (from, text, centerId, session) => {
   // Permitir volver atrás
-  const backResult = await handleBackIntent(from, text, session, companyId);
+  const backResult = await handleBackIntent(from, text, session, centerId);
   if (backResult) return;
 
   // Verificar si dice "me da igual"
@@ -484,7 +484,7 @@ const handleSelectingUser = async (from, text, companyId, session) => {
   
   if (/me\s*da\s*igual|cualquiera|el\s*que\s*prefieras|no\s*importa|da\s*igual/.test(norm_text)) {
     // Asignar automáticamente el con menos carga
-    user = await getLeastBusyUserForDateAndTime(session.date, session.time, session.availableUsers, companyId);
+    user = await getLeastBusyUserForDateAndTime(session.date, session.time, session.availableUsers, centerId);
     if (!user) {
       await reply(from, M.invalidChoice());
       return;
@@ -499,8 +499,8 @@ const handleSelectingUser = async (from, text, companyId, session) => {
     if (!user) {
       const newTime = parseTime(text);
       if (newTime && newTime !== session.time) {
-        setSession(from, { step: 'selecting-time', date: session.date, slots: session.slots, companyId, customerName: session.customerName });
-        return handleSelectingTime(from, text, companyId, getSession(from));
+        setSession(from, { step: 'selecting-time', date: session.date, slots: session.slots, centerId, customerName: session.customerName });
+        return handleSelectingTime(from, text, centerId, getSession(from));
       }
       // No es empleado ni hora válida
       await reply(from, M.invalidChoice());
@@ -510,7 +510,7 @@ const handleSelectingUser = async (from, text, companyId, session) => {
 
   // ✅ Usuario ya está en session.availableUsers = está validado por fecha+hora+horario
   // No hace falta revalidar, solo verificar vacation/sick
-  const planning = await getPlanningByUserAndDate(user.id, session.date, companyId);
+  const planning = await getPlanningByUserAndDate(user.id, session.date, centerId);
   if (planning && (planning.type === 'vacation' || planning.type === 'sick')) {
     await reply(from, M.noSlots(user.name, formatReadableDate(session.date)));
     return;
@@ -529,22 +529,22 @@ const handleSelectingUser = async (from, text, companyId, session) => {
     date: session.date,
     time: session.time,
     datetime,
-    companyId,
+    centerId,
     customerName: session.customerName
   });
   await reply(from, M.askNotes());
 };
 
-const handleSelectingTime = async (from, text, companyId, session) => {
+const handleSelectingTime = async (from, text, centerId, session) => {
   // Permitir volver atrás
-  const backResult = await handleBackIntent(from, text, session, companyId);
+  const backResult = await handleBackIntent(from, text, session, centerId);
   if (backResult) return;
 
   // Cambio de fecha mid-flow
   const newDate = parseDateFromText(text);
   if (newDate && newDate !== session.date) {
-    setSession(from, { step: 'awaiting-date', companyId, customerName: session.customerName });
-    return handleAwaitingDate(from, text, companyId, getSession(from));
+    setSession(from, { step: 'awaiting-date', centerId, customerName: session.customerName });
+    return handleAwaitingDate(from, text, centerId, getSession(from));
   }
 
   const time = parseTime(text);
@@ -560,7 +560,7 @@ const handleSelectingTime = async (from, text, companyId, session) => {
   }
 
   // Obtener usuarios disponibles para esa fecha+hora
-  const availableUsers = await getAvailableUsersForDateAndTime(session.date, time, companyId);
+  const availableUsers = await getAvailableUsersForDateAndTime(session.date, time, centerId);
   if (!availableUsers.length) {
     await reply(from, M.noProfessionalsThatDay(formatReadableDate(session.date)));
     return;
@@ -572,7 +572,7 @@ const handleSelectingTime = async (from, text, companyId, session) => {
     time,
     slots: session.slots,
     availableUsers,
-    companyId,
+    centerId,
     customerName: session.customerName
   });
   const list = availableUsers
@@ -581,13 +581,13 @@ const handleSelectingTime = async (from, text, companyId, session) => {
   await reply(from, M.listProfessionals(formatReadableDate(session.date), list));
 };
 
-const handleAskingNotes = async (from, text, companyId, session) => {
+const handleAskingNotes = async (from, text, centerId, session) => {
   // Permitir volver atrás
-  const backResult = await handleBackIntent(from, text, session, companyId);
+  const backResult = await handleBackIntent(from, text, session, centerId);
   if (backResult) return;
 
   const notes = matchIntent(text, 'skip') ? '' : text.trim();
-  setSession(from, { step: 'confirming', notes, companyId, userId: session.userId, userName: session.userName, date: session.date, time: session.time, datetime: session.datetime, customerName: session.customerName });
+  setSession(from, { step: 'confirming', notes, centerId, userId: session.userId, userName: session.userName, date: session.date, time: session.time, datetime: session.datetime, customerName: session.customerName });
   await reply(from, M.confirmSummary({
     readable: formatReadableDate(session.date),
     time: session.time,
@@ -597,9 +597,9 @@ const handleAskingNotes = async (from, text, companyId, session) => {
   }));
 };
 
-const handleConfirming = async (from, text, companyId, session) => {
+const handleConfirming = async (from, text, centerId, session) => {
   // Permitir volver atrás
-  const backResult = await handleBackIntent(from, text, session, companyId);
+  const backResult = await handleBackIntent(from, text, session, centerId);
   if (backResult) return;
 
   if (matchIntent(text, 'yes')) {
@@ -610,18 +610,18 @@ const handleConfirming = async (from, text, companyId, session) => {
         'general',
         session.userId,
         session.notes || '',
-        session.companyId || companyId,
+        session.centerId || centerId,
         session.customerName || null,
       );
       
-      // Broadcast WebSocket event to employee + all company users
-      const companyUsers = await prisma.user.findMany({
-        where: { companyId: session.companyId || companyId, isActive: true },
+      // Broadcast WebSocket event to employee + all center users
+      const centerUsers = await prisma.user.findMany({
+        where: { centerId: session.centerId || centerId, isActive: true },
         select: { id: true },
       });
       const targetUserIds = [
         session.userId,
-        ...companyUsers.map(u => u.id).filter(id => id !== session.userId)
+        ...centerUsers.map(u => u.id).filter(id => id !== session.userId)
       ];
       console.log(`💾 Appointment created by bot. Broadcasting to users:`, targetUserIds);
       broadcastAppointmentCreated(appointment, targetUserIds);
@@ -635,11 +635,11 @@ const handleConfirming = async (from, text, companyId, session) => {
         customerName: session.customerName,
       }));
       // Registrar éxito
-      await logSessionAction(from, 'booking_success', session.step, session, null, true, companyId).catch(err => console.error('[bot] logging error:', err));
+      await logSessionAction(from, 'booking_success', session.step, session, null, true, centerId).catch(err => console.error('[bot] logging error:', err));
     } catch (err) {
       console.error('[bot] booking error:', err);
       // Registrar fallo
-      await logSessionAction(from, 'booking_error', session.step, session, err.message, false, companyId).catch(err2 => console.error('[bot] logging error:', err2));
+      await logSessionAction(from, 'booking_error', session.step, session, err.message, false, centerId).catch(err2 => console.error('[bot] logging error:', err2));
       if (err.message?.includes('Slot ocupado') || err.code === '23505') {
         await reply(from, `¡Uy! 😬 Justo ese hueco se acaba de ocupar. Si quieres, escribe *menú* y empezamos de nuevo.`);
       } else {
@@ -654,18 +654,18 @@ const handleConfirming = async (from, text, companyId, session) => {
     clearSession(from);
     await reply(from, M.bookingDeclined());
     // Registrar cancelación
-    await logSessionAction(from, 'booking_declined', session.step, session, null, true, companyId).catch(err => console.error('[bot] logging error:', err));
+    await logSessionAction(from, 'booking_declined', session.step, session, null, true, centerId).catch(err => console.error('[bot] logging error:', err));
     return;
   }
 
   await reply(from, M.awaitingYesNo());
 };
 
-const handleCancelId = async (from, text, companyId = null) => {
+const handleCancelId = async (from, text, centerId = null) => {
   const session = getSession(from) || {};
   
   // Permitir volver atrás
-  const backResult = await handleBackIntent(from, text, session, companyId);
+  const backResult = await handleBackIntent(from, text, session, centerId);
   if (backResult) return;
 
   const id = text.trim().toUpperCase();
@@ -674,7 +674,7 @@ const handleCancelId = async (from, text, companyId = null) => {
     if (!appointment) {
       await reply(from, M.cancelNotFound());
       // Registrar intento fallido
-      await logSessionAction(from, 'cancel_not_found', session.step, { attempted_id: id }, null, false, companyId).catch(err => console.error('[bot] logging error:', err));
+      await logSessionAction(from, 'cancel_not_found', session.step, { attempted_id: id }, null, false, centerId).catch(err => console.error('[bot] logging error:', err));
       return;
     }
     await cancelAppointmentByCustomId(id, appointment.company_id);
@@ -685,7 +685,7 @@ const handleCancelId = async (from, text, companyId = null) => {
     console.error('[bot] cancel error:', err);
     await reply(from, M.cancelError());
     // Registrar error de cancelación
-    await logSessionAction(from, 'cancel_error', session.step, { attempted_id: id }, err.message, false, companyId).catch(err2 => console.error('[bot] logging error:', err2));
+    await logSessionAction(from, 'cancel_error', session.step, { attempted_id: id }, err.message, false, centerId).catch(err2 => console.error('[bot] logging error:', err2));
   }
   clearSession(from);
 };
@@ -693,9 +693,9 @@ const handleCancelId = async (from, text, companyId = null) => {
 // =====================================================================
 // ENTRY POINT
 // =====================================================================
-const DEFAULT_COMPANY_ID = parseInt(process.env.DEFAULT_WHATSAPP_COMPANY_ID || '1', 10);
+const DEFAULT_CENTER_ID = parseInt(process.env.DEFAULT_WHATSAPP_CENTER_ID || '1', 10);
 
-const handleMessage = async (from, rawText, companyId = DEFAULT_COMPANY_ID, credentials = null) => {
+const handleMessage = async (from, rawText, centerId = null, credentials = null) => {
   try {
     if (credentials) {
       wabaCredsByFrom.set(from, credentials);
@@ -729,21 +729,21 @@ const handleMessage = async (from, rawText, companyId = DEFAULT_COMPANY_ID, cred
     switch (session.step) {
       case undefined:
       case null:
-        return handleIdle(from, text, companyId);
+        return handleIdle(from, text, centerId);
       case 'asking-name':
-        return handleAskingName(from, text, companyId, session);
+        return handleAskingName(from, text, centerId, session);
       case 'awaiting-date':
-        return handleAwaitingDate(from, text, companyId, session);
+        return handleAwaitingDate(from, text, centerId, session);
       case 'selecting-time':
-        return handleSelectingTime(from, text, companyId, session);
+        return handleSelectingTime(from, text, centerId, session);
       case 'selecting-user':
-        return handleSelectingUser(from, text, companyId, session);
+        return handleSelectingUser(from, text, centerId, session);
       case 'asking-notes':
-        return handleAskingNotes(from, text, companyId, session);
+        return handleAskingNotes(from, text, centerId, session);
       case 'confirming':
-        return handleConfirming(from, text, companyId, session);
+        return handleConfirming(from, text, centerId, session);
       case 'asking-cancel-id':
-        return handleCancelId(from, text, companyId);
+        return handleCancelId(from, text, centerId);
       default:
         clearSession(from);
         await reply(from, M.notUnderstood());
