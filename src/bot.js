@@ -128,7 +128,8 @@ const parseRelativeDate = (text) => {
 
 const parseSpanishDate = (text) => {
   const n = norm(text);
-  const m = n.match(/(\d{1,2})\s*(?:de\s*)?([a-z]+)(?:\s*(?:de\s*)?\s*(\d{4}))?/);
+  // Busca patrones: "27 julio", "27 de julio", "27de julio", con espacios flexibles
+  const m = n.match(/(\d{1,2})\s*(?:de\s+)?([a-z]+)(?:\s+(?:de\s+)?(\d{4}))?/);
   if (!m) return null;
 
   const day = parseInt(m[1], 10);
@@ -415,17 +416,8 @@ const handleIdle = async (from, text, companyId) => {
   const possibleDate = parseDateFromText(text);
 
   if (matchIntent(text, 'book') || possibleDate) {
-    // Si ya conocemos al cliente por el teléfono, saltamos asking-name
-    const knownName = await getLastCustomerNameByPhone(from);
-    if (knownName) {
-      setSession(from, { step: 'awaiting-date', companyId, customerName: knownName });
-      if (possibleDate) {
-        return handleAwaitingDate(from, text, companyId, getSession(from));
-      }
-      await reply(from, M.askDate(knownName));
-      return;
-    }
-    // Cliente nuevo → preguntar nombre primero
+    // Siempre pedir nombre (no asumir que recordamos al cliente)
+    // El cliente puede cambiar o ser primera vez que contacta
     setSession(from, { step: 'asking-name', companyId, pendingDate: possibleDate || null });
     await reply(from, M.askName());
     return;
