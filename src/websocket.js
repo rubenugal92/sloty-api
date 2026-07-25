@@ -2,10 +2,12 @@ const WebSocket = require('ws');
 
 // Global clients store: { userId: Set<WebSocket> }
 const clients = new Map();
+let globalWss = null;  // Store wss globally for heartbeat
 
 // Initialize WebSocket server
 const initWebSocketServer = (server) => {
   const wss = new WebSocket.Server({ server, path: '/ws' });
+  globalWss = wss;  // Save reference for heartbeat
 
   wss.on('connection', (ws, req) => {
     console.log(`🔌 WebSocket connection attempt from ${req.headers['x-forwarded-for'] || req.socket.remoteAddress}`);
@@ -54,14 +56,18 @@ const initWebSocketServer = (server) => {
 
   // Ping all connected clients every 30 seconds (heartbeat)
   const heartbeatInterval = setInterval(() => {
-    wss.clients.forEach((ws) => {
-      // Close stale connections
-      if (ws.isAlive === false) {
-        return ws.terminate();
-      }
-      ws.isAlive = false;
-      ws.ping();
-    });
+    if (globalWss) {
+      console.log(`💓 Heartbeat check: ${globalWss.clients.size} total connections`);
+      globalWss.clients.forEach((ws) => {
+        // Close stale connections
+        if (ws.isAlive === false) {
+          console.log('   💀 Terminating stale connection');
+          return ws.terminate();
+        }
+        ws.isAlive = false;
+        ws.ping();
+      });
+    }
   }, 30000);
 
   // Cleanup interval on server close
